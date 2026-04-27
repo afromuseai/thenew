@@ -1,0 +1,234 @@
+
+You are building AFROMUSE COLAB STREAMING BRIDGE.
+
+This system connects AfroMuse backend to a Google Colab GPU worker
+that runs MusicGen and streams audio chunks back.
+
+========================================================
+🧠 SYSTEM OVERVIEW
+========================================================
+
+FLOW:
+
+Frontend → Backend → Colab GPU → Backend → Frontend (stream)
+
+Colab acts as:
+✔ GPU worker
+✔ Music generator
+✔ Chunk streamer
+
+Backend acts as:
+✔ Orchestrator
+✔ WebSocket streamer
+✔ Job manager
+
+========================================================
+📁 BACKEND FILES
+========================================================
+
+src/engine/bridge/
+  colabClient.ts
+  streamRelay.ts
+
+src/api/
+  streamBridge.ts
+
+========================================================
+🔥 LAYER 1 — COLAB CLIENT (CALL WORKER)
+========================================================
+
+FILE: src/engine/bridge/colabClient.ts
+--------------------------------------------------------
+
+export async function callColabWorker(input: any) {
+  const response = await fetch(process.env.COLAB_URL!, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.body) throw new Error("No stream from Colab");
+
+  return response.body;
+}
+
+========================================================
+🔥 LAYER 2 — STREAM RELAY (PIPE TO FRONTEND)
+========================================================
+
+FILE: src/engine/bridge/streamRelay.ts
+--------------------------------------------------------
+
+export async function relayStream(colabStream: any, ws: any) {
+  const reader = colabStream.getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) break;
+
+    ws.send(JSON.stringify({
+      type: "audio-chunk",
+      data: Buffer.from(value).toString("base64"),
+    }));
+  }
+
+  ws.send(JSON.stringify({
+    type: "complete",
+  }));
+}
+
+========================================================
+🔥 LAYER 3 — STREAM ROUTE
+========================================================
+
+FILE: src/api/streamBridge.ts
+--------------------------------------------------------
+
+import express from "express";
+import { callColabWorker } from "../engine/bridge/colabClient";
+import { relayStream } from "../engine/bridge/streamRelay";
+
+const router = express.Router();
+
+router.ws("/stream-ai", (ws: any) => {
+  ws.on("message", async (msg: string) => {
+    const input = JSON.parse(msg);
+
+    const stream = await callColabWorker(input);
+
+    await relayStream(stream, ws);
+  });
+});
+
+export default router;
+
+========================================================
+🔥 ENV VARIABLE
+========================================================
+
+Add this in Replit:
+
+COLAB_URL=https://your-colab-url.run.app
+
+(we will generate this below)
+
+========================================================
+🧠 COLAB SIDE (GPU WORKER)
+========================================================
+
+Now create a Google Colab notebook.
+
+Paste ALL of this:
+
+--------------------------------------------------------
+# STEP 1 — FIX ENV (CRITICAL)
+--------------------------------------------------------
+
+!pip install numpy==1.26.4 torch==2.4.1 torchaudio==2.4.1 torchvision==0.19.1
+!pip install audiocraft einops sentencepiece
+
+--------------------------------------------------------
+# STEP 2 — LOAD MODEL
+--------------------------------------------------------
+
+from audiocraft.models import MusicGen
+
+model = MusicGen.get_pretrained("facebook/musicgen-small")
+model.set_generation_params(duration=4)
+
+print("✅ MusicGen ready")
+
+--------------------------------------------------------
+# STEP 3 — STREAM SERVER
+--------------------------------------------------------
+
+from flask import Flask, request, Response
+import torch
+
+app = Flask(__name__)
+
+def generate_chunks(prompt, bpm, key):
+    chunks = []
+
+    for i in range(5):  # simulate streaming
+        wav = model.generate([prompt])
+
+        audio = wav[0].cpu().numpy().tobytes()
+        yield audio
+
+@app.route("/generate", methods=["POST"])
+def generate():
+    data = request.json
+
+    prompt = data.get("prompt", "")
+    bpm = data.get("bpm")
+    key = data.get("key")
+
+    return Response(
+        generate_chunks(prompt, bpm, key),
+        mimetype="application/octet-stream"
+    )
+
+--------------------------------------------------------
+# STEP 4 — EXPOSE PUBLIC URL
+--------------------------------------------------------
+
+!pip install pyngrok
+
+from pyngrok import ngrok
+
+public_url = ngrok.connect(5000)
+print("🔥 COLAB URL:", public_url)
+
+app.run(port=5000)
+
+========================================================
+🔥 FRONTEND BEHAVIOR
+========================================================
+
+1. Open websocket to:
+   ws://your-backend/api/stream-ai
+
+2. Send:
+
+{
+  "prompt": "Afrobeats dancehall groove, uplifting",
+  "bpm": 100,
+  "key": "A minor"
+}
+
+3. Receive:
+
+- audio-chunk (base64)
+- audio-chunk
+- audio-chunk
+- complete
+
+4. Decode base64 → append → play progressively
+
+========================================================
+🔥 IMPORTANT NOTES
+========================================================
+
+✔ This is NOT fake streaming — it’s chunk streaming
+✔ Each chunk = small MusicGen generation
+✔ Works even on free GPU
+✔ No dependency conflicts anymore
+✔ Fully under your control
+
+========================================================
+🔥 NEXT UPGRADES
+========================================================
+
+1. Replace Flask with FastAPI (faster streaming)
+2. Add chunk conditioning (continuity between chunks)
+3. Add Beat DNA injection per segment
+4. Upgrade to musicgen-medium on GPU
+5. Move worker to AWS later
+
+========================================================
+END OF SYSTEM
+========================================================

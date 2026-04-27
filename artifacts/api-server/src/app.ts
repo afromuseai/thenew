@@ -5,6 +5,7 @@ import musicRoutes from "./routes/music";
 import afromuseRoutes from "./engine/api/routes";
 import selfhostRoutes from "./engine/selfhost/routes";
 import streamRoutes from "./api/streamRoutes";
+import streamBridge from "./api/streamBridge";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -55,6 +56,7 @@ app.use("/api/music", musicRoutes);
 app.use("/api/afromuse", afromuseRoutes);
 app.use("/api/selfhost", selfhostRoutes);
 app.use("/api/realtime", streamRoutes);
+app.use("/api", streamBridge);
 
 app.use(express.urlencoded({ extended: true }));
 
