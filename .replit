@@ -122,7 +122,7 @@ externalPort = 80
 PORT = "5000"
 BASE_PATH = "/"
 ELEVENLABS_MUSIC_ENABLED = "true"
-CALLBACK_BASE_URL = "https://8ec2a713-dcc5-404a-ae32-a8d18ba991cf-00-776b6yv6rikp.worf.replit.dev"
+CALLBACK_BASE_URL = "https://177ba4b6-7b20-4ac4-b72d-774811c0794a-00-2fsffjtoatvdu.janeway.replit.dev"
 
 [deployment]
 deploymentTarget = "cloudrun"
