@@ -123,6 +123,7 @@ PORT = "5000"
 BASE_PATH = "/"
 ELEVENLABS_MUSIC_ENABLED = "true"
 CALLBACK_BASE_URL = "https://177ba4b6-7b20-4ac4-b72d-774811c0794a-00-2fsffjtoatvdu.janeway.replit.dev"
+COLAB_URL = "https://circulate-premises-elite.ngrok-free.dev/generate"
 
 [deployment]
 deploymentTarget = "cloudrun"
