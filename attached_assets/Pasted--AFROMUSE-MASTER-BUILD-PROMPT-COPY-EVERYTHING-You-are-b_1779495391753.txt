@@ -1,0 +1,63 @@
+🧠🔥 AFROMUSE MASTER BUILD PROMPT (COPY EVERYTHING)
+You are building a production-grade AI music system called AFROMUSE.You MUST follow this architecture exactly. Do NOT simplify, rename, or remove components unless explicitly stated. The system must be deterministic, modular, and pipeline-based.========================================================🚨 CORE PRINCIPLE========================================================AfroMuse is NOT a single model caller.It is a 5-layer controlled pipeline:1. Input Normalizer2. Prompt OS (Single Source of Truth for prompts)3. Structure Enforcer (music rules engine)4. Model Router (AI execution layer)5. Post Processor + Storage LayerEVERY request MUST pass through all 5 layers.========================================================📁 FINAL PROJECT STRUCTURE========================================================src/  engine/    afroCore/      pipeline.ts              <-- MAIN ORCHESTRATOR    promptOS/      index.ts                <-- generatePrompt ONLY      styleWeighting.ts      dnaFusion.ts    composer/      structure.ts            <-- chorus/verse enforcement    model/      router.ts               <-- single model entry point    post/      process.ts              <-- fixes model output    storage/      projects.ts            <-- library system    api/      routes.ts               <-- express endpoints========================================================🔥 LAYER 1 — PROMPT OS (DO NOT MIX LOGIC HERE)========================================================FILE: src/engine/promptOS/index.ts```tsimport { weighStyle } from "./styleWeighting";import { fuseDNA } from "./dnaFusion";export function generatePrompt(input) {  const {    title,    style,    genre,    mood,    bpm,    key,    beatDNA,    artistDNA,  } = input;  const isVocal =    input.mode === "vocal" || input.mode === "full-song";  const styleWeight = weighStyle(style);  const identityBlock = `USER CREATIVE DIRECTION (${styleWeight.label.toUpperCase()}):${style?.trim() || "No direction provided"}`;  const contextBlock = `TITLE: ${title || "Untitled"}GENRE: ${genre || "Unknown"}MOOD: ${mood || "Neutral"}BPM: ${bpm || "Auto"}KEY: ${key || "Auto"}`;  const dna = fuseDNA(beatDNA, isVocal ? artistDNA : undefined);  const modeBlock =    input.mode === "instrumental"      ? "OUTPUT: Instrumental only. No vocals."      : input.mode === "vocal"      ? "OUTPUT: Full vocal performance with structure."      : "OUTPUT: Full song with vocals + instrumental.";  return [    identityBlock,    contextBlock,    dna.beatBlock,    dna.artistBlock,    modeBlock,  ]    .filter(Boolean)    .join("\n\n");}
+========================================================
+🔥 LAYER 2 — STRUCTURE ENFORCER
+FILE: src/engine/composer/structure.ts
+export function enforceStructure(input) {  if (input.mode === "instrumental") {    return {      ...input,      structure: ["intro", "build", "drop", "break", "drop", "outro"],    };  }  return {    ...input,    structure: [      "intro",      "chorus",      "verse",      "chorus",      "verse",      "chorus",      "outro",    ],  };}
+========================================================
+🔥 LAYER 3 — MODEL ROUTER
+FILE: src/engine/model/router.ts
+import { runMusicGen } from "./musicgen";export async function modelRun(prompt, mode) {  return runMusicGen({    prompt,    mode,  });}
+========================================================
+🔥 LAYER 4 — POST PROCESSOR
+FILE: src/engine/post/process.ts
+export function postProcess(output, input) {  return {    ...output,    key: input.key,    bpm: input.bpm,    mode: input.mode,    structureLocked: true,  };}
+========================================================
+🔥 LAYER 5 — STORAGE SYSTEM
+FILE: src/engine/storage/projects.ts
+const store = new Map();export const ProjectStore = {  save(id, data) {    store.set(id, data);  },  get(id) {    return store.get(id);  },  all() {    return Array.from(store.values());  },};
+========================================================
+🔥 LAYER 6 — MAIN PIPELINE (MOST IMPORTANT FILE)
+FILE: src/engine/afroCore/pipeline.ts
+import { generatePrompt } from "../promptOS";import { enforceStructure } from "../composer/structure";import { modelRun } from "../model/router";import { postProcess } from "../post/process";import { ProjectStore } from "../storage/projects";export async function runAfroMuse(input) {  // 1. Build prompt  const prompt = generatePrompt(input);  // 2. Enforce structure BEFORE model  const structured = enforceStructure(input);  // 3. Run model  const output = await modelRun(prompt, structured.mode);  // 4. Fix model mistakes  const finalOutput = postProcess(output, structured);  // 5. Save to library  ProjectStore.save(finalOutput.id, finalOutput);  return finalOutput;}
+========================================================
+🔥 API LAYER
+FILE: src/engine/api/routes.ts
+import express from "express";import { runAfroMuse } from "../afroCore/pipeline";const router = express.Router();router.post("/generate", async (req, res) => {  try {    const result = await runAfroMuse(req.body);    res.json(result);  } catch (e) {    res.status(500).json({ error: e.message });  }});export default router;
+========================================================
+🚨 CRITICAL RULES FOR REPLIT AGENT
+
+
+DO NOT create duplicate variables like "mode"
+
+
+DO NOT mix Prompt OS with model logic
+
+
+DO NOT call model directly from API
+
+
+ALL generation MUST go through pipeline.ts
+
+
+Storage MUST happen ONLY in pipeline
+
+
+Structure enforcement MUST happen BEFORE model
+
+
+Post-processing MUST happen AFTER model
+
+
+========================================================
+🔥 SUCCESS CRITERIA
+When finished, system must:
+✔ Respect BPM
+✔ Respect KEY
+✔ Respect STRUCTURE (chorus/verse order)
+✔ Store every project
+✔ Never bypass pipeline
+✔ Be deterministic and modular
+========================================================
+END OF MASTER PROMPT
+---# ⚠️ What this solves for youThis single prompt forces Replit Agent to fix:- Prompt OS chaos- Mode duplication errors- Music structure ignoring- Library not saving- Direct model bypass issues- Uncontrolled architecture sprawl---# If you want next upgrade (important)After this works, the next real step is:### 🚀 “AfroMuse Own Model Layer (no external API dependency)”- local inference layer- MusicGen/Ace-Step abstraction- AWS optional GPU fallback- model switching systemJust tell me:> “build AfroMuse self-hosted model layer”and I’ll take you into full independence mode.
