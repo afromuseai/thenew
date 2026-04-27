@@ -43,12 +43,24 @@ let lastDiversitySignature: {
   arrangementKey?: string;
 } = {};
 
+/**
+ * Canonical AfroMuse song arrangement.
+ * Every diversity profile uses this exact section order so generated lyrics
+ * always come back as a complete song (intro, chorus, verse 1, chorus,
+ * verse 2, bridge, chorus, outro). Diversity now lives in emotional lens,
+ * energy curve, hook structure, line counts, and production variation —
+ * NOT in the arrangement skeleton itself.
+ */
+const STANDARD_ARRANGEMENT: SectionKey[] = [
+  "intro", "hook", "verse1", "hook", "verse2", "bridge", "hook", "outro",
+];
+
 const diversityProfiles: DiversityProfile[] = [
   {
     dnaMode: "REPETITION MODE",
     emotionalLens: "Power",
     energyLevel: "High",
-    arrangementOrder: ["hook", "verse1", "hook", "verse2", "hook", "outro"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "chant-driven repeated anchor, minimal verse change, crowd-response phrasing",
     chorusLengthPattern: "short repeated 4-line hook",
     energyCurve: "instant high impact → controlled dip → repeated high impact",
@@ -61,13 +73,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "straight",
     },
     performanceType: "Club Banger",
-    sectionLineTargets: { hook: [4], verse1: [8], verse2: [8], outro: [2, 4] },
+    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
   },
   {
     dnaMode: "STORY MODE",
     emotionalLens: "Reflection",
     energyLevel: "Medium",
-    arrangementOrder: ["verse1", "verse2", "hook", "bridge", "hook", "outro"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "light hook, verse carries the song, no repetition dominance",
     chorusLengthPattern: "light 4-line chorus",
     energyCurve: "slow narrative climb → late emotional release → quiet landing",
@@ -80,13 +92,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Emotional Replay",
-    sectionLineTargets: { verse1: [12, 16], verse2: [12, 16], hook: [4], bridge: [4], outro: [2, 4] },
+    sectionLineTargets: { intro: [2, 4], hook: [4], verse1: [12, 16], verse2: [12, 16], bridge: [4], outro: [2, 4] },
   },
   {
     dnaMode: "CHAOS MODE",
     emotionalLens: "Defiance",
     energyLevel: "High",
-    arrangementOrder: ["hook", "hook", "verse1", "bridge", "verse2", "hook"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "broken phrasing, irregular hook returns, unpredictable flow",
     chorusLengthPattern: "uneven 6-line hook",
     energyCurve: "spike → fracture → drop out → sudden return",
@@ -99,13 +111,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "broken",
     },
     performanceType: "Street Anthem",
-    sectionLineTargets: { hook: [6], verse1: [8, 12], bridge: [4], verse2: [8], outro: [] },
+    sectionLineTargets: { intro: [2], hook: [6], verse1: [8, 12], verse2: [8], bridge: [4], outro: [2] },
   },
   {
     dnaMode: "MINIMAL MODE",
     emotionalLens: "Pain",
     energyLevel: "Low",
-    arrangementOrder: ["intro", "hook", "verse1", "hook", "outro"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "few words, silence matters, emotional weight per word",
     chorusLengthPattern: "minimal 2-to-4-line hook",
     energyCurve: "low pressure → exposed center → quiet aftershock",
@@ -118,13 +130,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Emotional Replay",
-    sectionLineTargets: { intro: [2], hook: [2, 4], verse1: [8], verse2: [], bridge: [], outro: [2] },
+    sectionLineTargets: { intro: [2], hook: [2, 4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2] },
   },
   {
     dnaMode: "MAXIMAL MODE",
     emotionalLens: "Faith",
     energyLevel: "Medium",
-    arrangementOrder: ["verse1", "hook", "verse2", "bridge", "hook", "outro"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "dense lyrical hook with layered meaning and heavy imagery",
     chorusLengthPattern: "full 8-line chorus",
     energyCurve: "dense build → heavy peak → wider final statement",
@@ -137,13 +149,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Spiritual Anthem",
-    sectionLineTargets: { verse1: [16], hook: [8], verse2: [16], bridge: [4], outro: [4] },
+    sectionLineTargets: { intro: [2, 4], hook: [8], verse1: [16], verse2: [16], bridge: [4], outro: [4] },
   },
   {
     dnaMode: "MINIMAL MODE",
     emotionalLens: "Loneliness",
     energyLevel: "Low",
-    arrangementOrder: ["intro", "verse1", "hook", "verse2", "outro"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "short, raw, aching — feels like the artist is singing to themselves",
     chorusLengthPattern: "bare 2-line hook with space after each line",
     energyCurve: "quiet opening → subdued rise → hollow landing",
@@ -156,13 +168,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Emotional Replay",
-    sectionLineTargets: { intro: [2, 4], verse1: [8], hook: [2], verse2: [8], outro: [2, 4] },
+    sectionLineTargets: { intro: [2, 4], hook: [2], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
   },
   {
     dnaMode: "STORY MODE",
     emotionalLens: "Struggle",
     energyLevel: "Medium",
-    arrangementOrder: ["intro", "hook", "verse1", "hook", "verse2", "bridge", "hook"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "resilient anthem-style, simple but carries weight — screams survival",
     chorusLengthPattern: "4-to-6 line hook, emotionally driven",
     energyCurve: "quiet start → pressure mounting → explosive hook release → reflective bridge → final declaration",
@@ -175,13 +187,13 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Street Anthem",
-    sectionLineTargets: { intro: [2], hook: [4, 6], verse1: [8, 12], verse2: [8, 12], bridge: [4], outro: [] },
+    sectionLineTargets: { intro: [2], hook: [4, 6], verse1: [8, 12], verse2: [8, 12], bridge: [4], outro: [2, 4] },
   },
   {
     dnaMode: "REPETITION MODE",
     emotionalLens: "Celebration",
     energyLevel: "High",
-    arrangementOrder: ["hook", "verse1", "hook", "verse2", "hook", "bridge", "hook"],
+    arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "pure party energy — ultra-chantable, crowd-friendly, instant repeat",
     chorusLengthPattern: "4-line hook repeated heavily",
     energyCurve: "big open → sustained high → crowd drop → biggest hook at the end",
@@ -194,7 +206,7 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "straight",
     },
     performanceType: "TikTok Viral",
-    sectionLineTargets: { hook: [4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [] },
+    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
   },
 ];
 
@@ -213,8 +225,7 @@ function createDiversityProfile(): DiversityProfile {
       profile.hookStructure === lastDiversitySignature.hookStructure ||
       profile.chorusLengthPattern === lastDiversitySignature.chorusLengthPattern ||
       profile.energyCurve === lastDiversitySignature.energyCurve ||
-      profile.energyLevel === lastDiversitySignature.energyLevel ||
-      profile.arrangementOrder.join("→") === lastDiversitySignature.arrangementKey,
+      profile.energyLevel === lastDiversitySignature.energyLevel,
   );
   const emotionalLens = pickRandomItem(
     emotionalLensPool,
@@ -306,8 +317,14 @@ function buildDiversityDirective(profile: DiversityProfile): string[] {
     "SECTION TARGETS:",
     formatSectionTargets(profile),
     "",
-    "— STEP 7: SECTION OUTPUT —",
-    "Sections NOT in this arrangement MUST be returned as empty arrays [].",
+    "— STEP 7: SECTION OUTPUT (MANDATORY — STANDARD ARRANGEMENT) —",
+    "Every AfroMuse song uses this canonical arrangement, in this exact order:",
+    "    Intro → Chorus (Hook) → Verse 1 → Chorus (Hook) → Verse 2 → Bridge → Chorus (Hook) → Outro",
+    "All SIX section keys MUST be returned with non-empty content:",
+    "    intro, hook, verse1, verse2, bridge, outro",
+    "  → `hook` is written ONCE — it is reused at the three chorus positions in the arrangement.",
+    "  → No section may be returned as an empty array. If you have nothing original for a section, write a short, on-theme version (intro/outro = 2 short lines; bridge = 2-4 lines).",
+    "  → Honour the SECTION TARGETS line counts above for each section.",
     "All other required output fields (songQualityReport, hookVariants, hitPrediction, globalReleaseReport, etc.)",
     "must still be included exactly as specified in the system output format — do NOT skip them.",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
