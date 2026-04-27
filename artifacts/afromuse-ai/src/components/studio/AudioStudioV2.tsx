@@ -235,6 +235,21 @@ const BEAT_DNA_MELODY_DENSITIES = ["Minimal", "Balanced", "Rich", "Lush", "Cinem
 const BEAT_DNA_DRUM_CHARACTERS  = ["Clean", "Punchy", "Raw", "Dusty", "Percussive", "Heavy Groove"];
 const BEAT_DNA_HOOK_LIFTS       = ["Subtle", "Balanced", "Big", "Anthemic", "Explosive"];
 
+const MUSICAL_KEYS = [
+  "C Major",  "C Minor",
+  "C# Major", "C# Minor",
+  "D Major",  "D Minor",
+  "D# Major", "D# Minor",
+  "E Major",  "E Minor",
+  "F Major",  "F Minor",
+  "F# Major", "F# Minor",
+  "G Major",  "G Minor",
+  "G# Major", "G# Minor",
+  "A Major",  "A Minor",
+  "A# Major", "A# Minor",
+  "B Major",  "B Minor",
+];
+
 function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -1351,7 +1366,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const [singingStyle,          setSingingStyle]          = useState<typeof SINGING_STYLES[number]>("Afrobeat");
   const [songMood,              setSongMood]              = useState<typeof SONG_MOODS[number]>("Energetic");
   const [keeperLines,           setKeeperLines]           = useState("");
-  const [voiceEngineExpanded,   setVoiceEngineExpanded]   = useState(false);
+  const [voiceEngineExpanded,   setVoiceEngineExpanded]   = useState(true);
 
   // Personal Voice Clone Singing Engine
   const [voiceRecording,        setVoiceRecording]        = useState<Blob | null>(null);
@@ -2512,10 +2527,16 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">Key</label>
-                  <input type="text" value={musicalKey} onChange={(e) => setMusicalKey(e.target.value)}
-                    placeholder={genreDefaults.key}
-                    className="w-full h-10 rounded-xl bg-white/4 border border-white/8 px-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all"
-                  />
+                  <select
+                    value={musicalKey}
+                    onChange={(e) => setMusicalKey(e.target.value)}
+                    className="w-full h-10 rounded-xl bg-white/4 border border-white/8 px-3 text-sm text-white focus:outline-none focus:border-amber-500/40 transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="" className="bg-zinc-900">{`Default — ${genreDefaults.key}`}</option>
+                    {MUSICAL_KEYS.map((k) => (
+                      <option key={k} value={k} className="bg-zinc-900">{k}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -3097,8 +3118,8 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                           <Sparkles className="w-3 h-3 text-fuchsia-400" />
                         </div>
                         <div className="text-left">
-                          <div className="text-[11px] font-bold tracking-widest uppercase text-fuchsia-300/80">Voice Engine</div>
-                          <div className="text-[9px] text-fuchsia-400/40 mt-0.5">Dialect · Texture · Style · Keeper Lines</div>
+                          <div className="text-[11px] font-bold tracking-widest uppercase text-fuchsia-300/80">Artist DNA</div>
+                          <div className="text-[9px] text-fuchsia-400/40 mt-0.5">Reference Artist · Voice Texture · Singing Style · Dialect Depth</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
