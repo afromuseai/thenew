@@ -1,0 +1,272 @@
+You are building a production-grade AI music system called AFROMUSE.
+
+This is a FULL STACK AI MUSIC ENGINE. You MUST implement it exactly as specified below. Do not simplify, rename, or remove architecture components.
+
+========================================================
+🧠 CORE PRINCIPLE
+========================================================
+AfroMuse is a deterministic AI music pipeline, NOT a single model call.
+
+Every request MUST pass through:
+
+1. Input Normalization
+2. Prompt OS (single source of truth)
+3. Structure Enforcer (music rules engine)
+4. Model Router (execution layer)
+5. Post Processor + Storage system
+
+NO direct model calls from API are allowed.
+
+========================================================
+📁 FINAL ARCHITECTURE
+========================================================
+
+src/engine/
+  afroCore/
+    pipeline.ts
+
+  promptOS/
+    index.ts
+    styleWeighting.ts
+    dnaFusion.ts
+
+  composer/
+    structure.ts
+
+  model/
+    router.ts
+    musicgen.ts (placeholder wrapper)
+
+  post/
+    process.ts
+
+  storage/
+    projects.ts
+
+  api/
+    routes.ts
+
+========================================================
+🔥 LAYER 1 — PROMPT OS (ONLY TEXT GENERATION)
+========================================================
+
+FILE: src/engine/promptOS/index.ts
+--------------------------------------------------------
+
+export function generatePrompt(input: any): string {
+  const {
+    title,
+    style,
+    genre,
+    mood,
+    bpm,
+    key,
+    beatDNA,
+    artistDNA,
+    mode,
+  } = input;
+
+  const isVocal = mode === "vocal" || mode === "full-song";
+
+  const identityBlock = `
+USER CREATIVE DIRECTION:
+${style || "No direction provided"}
+`;
+
+  const contextBlock = `
+TITLE: ${title || "Untitled"}
+GENRE: ${genre || "Unknown"}
+MOOD: ${mood || "Neutral"}
+BPM: ${bpm || "Auto"}
+KEY: ${key || "Auto"}
+`;
+
+  const dnaBlock = `
+BEAT DNA: ${beatDNA || "default"}
+ARTIST DNA: ${isVocal ? artistDNA || "none" : "disabled"}
+`;
+
+  const modeBlock =
+    mode === "instrumental"
+      ? "OUTPUT: Instrumental only. No vocals allowed."
+      : mode === "vocal"
+      ? "OUTPUT: Full vocal performance with structure."
+      : "OUTPUT: Full song with vocals and instrumental integration.";
+
+  return [identityBlock, contextBlock, dnaBlock, modeBlock]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+========================================================
+🔥 LAYER 2 — STRUCTURE ENFORCER
+========================================================
+
+FILE: src/engine/composer/structure.ts
+--------------------------------------------------------
+
+export function enforceStructure(input: any) {
+  if (input.mode === "instrumental") {
+    return {
+      ...input,
+      structure: ["intro", "build", "drop", "break", "drop", "outro"],
+    };
+  }
+
+  return {
+    ...input,
+    structure: [
+      "intro",
+      "chorus",
+      "verse",
+      "chorus",
+      "verse",
+      "chorus",
+      "outro",
+    ],
+  };
+}
+
+========================================================
+🔥 LAYER 3 — MODEL ROUTER
+========================================================
+
+FILE: src/engine/model/router.ts
+--------------------------------------------------------
+
+import { runMusicGen } from "./musicgen";
+
+export async function modelRun(prompt: string, mode: string) {
+  // This is the ONLY model entry point
+  return runMusicGen({
+    prompt,
+    mode,
+  });
+}
+
+========================================================
+🔥 LAYER 4 — POST PROCESSOR
+========================================================
+
+FILE: src/engine/post/process.ts
+--------------------------------------------------------
+
+export function postProcess(output: any, input: any) {
+  return {
+    ...output,
+    key: input.key,
+    bpm: input.bpm,
+    mode: input.mode,
+    structureLocked: true,
+  };
+}
+
+========================================================
+🔥 LAYER 5 — STORAGE SYSTEM
+========================================================
+
+FILE: src/engine/storage/projects.ts
+--------------------------------------------------------
+
+const store = new Map();
+
+export const ProjectStore = {
+  save(id: string, data: any) {
+    store.set(id, data);
+  },
+
+  get(id: string) {
+    return store.get(id);
+  },
+
+  all() {
+    return Array.from(store.values());
+  },
+};
+
+========================================================
+🔥 LAYER 6 — MAIN PIPELINE (CORE ENGINE)
+========================================================
+
+FILE: src/engine/afroCore/pipeline.ts
+--------------------------------------------------------
+
+import { generatePrompt } from "../promptOS";
+import { enforceStructure } from "../composer/structure";
+import { modelRun } from "../model/router";
+import { postProcess } from "../post/process";
+import { ProjectStore } from "../storage/projects";
+
+export async function runAfroMuse(input: any) {
+  // STEP 1: Build prompt
+  const prompt = generatePrompt(input);
+
+  // STEP 2: Enforce structure BEFORE model
+  const structured = enforceStructure(input);
+
+  // STEP 3: Run model
+  const output = await modelRun(prompt, structured.mode);
+
+  // STEP 4: Fix model output
+  const finalOutput = postProcess(output, structured);
+
+  // STEP 5: Save to library
+  const id = finalOutput.id || crypto.randomUUID();
+  ProjectStore.save(id, finalOutput);
+
+  return finalOutput;
+}
+
+========================================================
+🔥 API LAYER
+========================================================
+
+FILE: src/engine/api/routes.ts
+--------------------------------------------------------
+
+import express from "express";
+import { runAfroMuse } from "../afroCore/pipeline";
+
+const router = express.Router();
+
+router.post("/generate", async (req, res) => {
+  try {
+    const result = await runAfroMuse(req.body);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
+
+========================================================
+🔥 CRITICAL SYSTEM RULES (MUST ENFORCE)
+========================================================
+
+1. NEVER call model directly from API
+2. ALL generation must go through runAfroMuse()
+3. Prompt OS must only build text (no logic)
+4. Structure must be enforced BEFORE model
+5. Post-processing must fix model mistakes
+6. Storage must happen ONLY in pipeline
+7. No duplicate variables like "mode"
+8. System must be deterministic
+
+========================================================
+🔥 SUCCESS CRITERIA
+========================================================
+
+After implementation:
+
+✔ Key is respected
+✔ BPM is respected
+✔ Mode is respected
+✔ Structure is respected (chorus/verse order enforced)
+✔ Library saves every project
+✔ No bypassing pipeline
+✔ System is modular and production-ready
+
+========================================================
+END OF AFROMUSE MASTER BUILD FILE
+========================================================
