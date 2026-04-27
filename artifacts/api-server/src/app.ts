@@ -1,16 +1,16 @@
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
+import { app } from "./lib/expressApp";
 import authRoutes from "./routes/auth";
 import musicRoutes from "./routes/music";
 import afromuseRoutes from "./engine/api/routes";
 import selfhostRoutes from "./engine/selfhost/routes";
+import streamRoutes from "./api/streamRoutes";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { instrumentalCallback } from "./api/instrumentalCallback";
-
-const app: Express = express();
 
 app.use(
   pinoHttp({
@@ -54,6 +54,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/music", musicRoutes);
 app.use("/api/afromuse", afromuseRoutes);
 app.use("/api/selfhost", selfhostRoutes);
+app.use("/api/realtime", streamRoutes);
 
 app.use(express.urlencoded({ extended: true }));
 

@@ -1,0 +1,200 @@
+
+You are building AFROMUSE v2 REAL-TIME STREAMING BEAT GENERATOR.
+
+This system generates music in LIVE CHUNKS and streams them progressively to the frontend.
+
+It simulates real-time AI music generation using chunked inference.
+
+========================================================
+🧠 CORE CONCEPT
+========================================================
+
+Instead of waiting for full song generation:
+
+❌ OLD SYSTEM: generate full 3 min audio → return
+✅ NEW SYSTEM: generate 2–5 sec audio chunks → stream continuously
+
+Frontend receives:
+- intro chunk
+- loop chunks
+- variation chunks
+- finalization chunk
+
+========================================================
+📁 ARCHITECTURE
+========================================================
+
+src/engine/realtime/
+  streamEngine.ts
+  chunker.ts
+  timeline.ts
+  websocket.ts
+
+src/engine/models/
+  musicgen/
+    chunkRunner.ts
+
+src/api/
+  streamRoutes.ts
+
+========================================================
+🔥 LAYER 1 — STREAM ENGINE (CORE BRAIN)
+========================================================
+
+FILE: src/engine/realtime/streamEngine.ts
+--------------------------------------------------------
+
+import { generateChunk } from "../models/musicgen/chunkRunner";
+import { sendChunk } from "./websocket";
+import { buildTimeline } from "./timeline";
+
+export async function startStreamSession(input: any, ws: any) {
+  const timeline = buildTimeline(input);
+
+  for (const segment of timeline) {
+    const chunk = await generateChunk({
+      prompt: input.prompt,
+      segment,
+      bpm: input.bpm,
+      key: input.key,
+    });
+
+    sendChunk(ws, {
+      type: "audio-chunk",
+      segment: segment.name,
+      data: chunk,
+    });
+  }
+
+  sendChunk(ws, {
+    type: "stream-complete",
+  });
+}
+
+========================================================
+🔥 LAYER 2 — TIMELINE BUILDER
+========================================================
+
+FILE: src/engine/realtime/timeline.ts
+--------------------------------------------------------
+
+export function buildTimeline(input: any) {
+  const isVocal = input.mode === "vocal";
+
+  return [
+    { name: "intro", duration: 4 },
+    { name: "groove", duration: 8 },
+    { name: "build", duration: 8 },
+    { name: "drop", duration: 8 },
+    ...(isVocal ? [{ name: "hook", duration: 8 }] : []),
+    { name: "variation", duration: 8 },
+    { name: "outro", duration: 4 },
+  ];
+}
+
+========================================================
+🔥 LAYER 3 — MUSICGEN CHUNK RUNNER
+========================================================
+
+FILE: src/engine/models/musicgen/chunkRunner.ts
+--------------------------------------------------------
+
+export async function generateChunk(input: any) {
+  // THIS REPRESENTS LOCAL OR GPU INFERENCE
+
+  const prompt = `
+SECTION: ${input.segment.name}
+BPM: ${input.bpm}
+KEY: ${input.key}
+PROMPT: ${input.prompt}
+  `;
+
+  return {
+    audio: "binary-audio-buffer-placeholder",
+    prompt,
+    segment: input.segment.name,
+  };
+}
+
+========================================================
+🔥 LAYER 4 — WEBSOCKET STREAMING LAYER
+========================================================
+
+FILE: src/engine/realtime/websocket.ts
+--------------------------------------------------------
+
+export function sendChunk(ws: any, payload: any) {
+  if (!ws) return;
+
+  ws.send(JSON.stringify(payload));
+}
+
+========================================================
+🔥 LAYER 5 — API STREAM ROUTE
+========================================================
+
+FILE: src/api/streamRoutes.ts
+--------------------------------------------------------
+
+import express from "express";
+import { startStreamSession } from "../engine/realtime/streamEngine";
+
+const router = express.Router();
+
+router.ws("/stream", (ws: any, req: any) => {
+  ws.on("message", async (msg: string) => {
+    const input = JSON.parse(msg);
+
+    await startStreamSession(input, ws);
+  });
+});
+
+export default router;
+
+========================================================
+🔥 FRONTEND BEHAVIOR (IMPORTANT)
+========================================================
+
+Frontend must:
+
+1. Open websocket connection
+2. Send generation request
+3. Receive audio chunks
+4. Append chunks into buffer timeline
+5. Play immediately (no waiting for full song)
+
+Streaming flow:
+
+UI:
+[Generating Intro...] → play
+[Building Groove...] → layer
+[Drop incoming...] → intensify
+[Hook...] → vocal layer
+[Complete]
+
+========================================================
+🔥 CRITICAL RULES
+========================================================
+
+✔ No full-song blocking generation
+✔ Everything must be chunk-based
+✔ Every chunk must respect BPM + Key
+✔ Timeline controls structure
+✔ Websocket is mandatory transport layer
+✔ System must degrade gracefully if chunk fails
+
+========================================================
+🔥 RESULT
+========================================================
+
+After implementation, AfroMuse becomes:
+
+✔ Real-time beat generator
+✔ Live AI music streaming system
+✔ TikTok-style instant audio feedback
+✔ Modular AI music pipeline
+✔ Scalable to GPU cloud later
+
+========================================================
+END OF AFROMUSE v2 STREAM ENGINE
+========================================================
