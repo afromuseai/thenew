@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import authRoutes from "./routes/auth";
 import musicRoutes from "./routes/music";
 import afromuseRoutes from "./engine/api/routes";
+import selfhostRoutes from "./engine/selfhost/routes";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -52,6 +53,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/music", musicRoutes);
 app.use("/api/afromuse", afromuseRoutes);
+app.use("/api/selfhost", selfhostRoutes);
 
 app.use(express.urlencoded({ extended: true }));
 
