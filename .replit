@@ -6,6 +6,7 @@ packages = ["libxcrypt"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
+integrations = ["javascript_openai_ai_integrations:2.0.0"]
 
 [workflows]
 runButton = "Project"
@@ -145,6 +146,7 @@ BASE_PATH = "/"
 ELEVENLABS_MUSIC_ENABLED = "true"
 CALLBACK_BASE_URL = "https://a4f5ccaa-6fcf-47d5-8af4-6c1b6bb8657c-00-1pou2fj0e6eb2.spock.replit.dev"
 COLAB_URL = "https://circulate-premises-elite.ngrok-free.dev/generate"
+API_PORT = "8080"
 
 [deployment]
 deploymentTarget = "cloudrun"

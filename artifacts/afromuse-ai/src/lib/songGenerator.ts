@@ -1,4 +1,4 @@
-import { inferLyricsEmotions, decorateSectionLabel, type SectionRole } from "./lyricsEmotion";
+import { inferLyricsEmotions, type SectionRole } from "./lyricsEmotion";
 
 export interface SongDraft {
   title: string;
@@ -843,17 +843,21 @@ export function generateSongDraft(
 export function formatDraftForClipboard(draft: SongDraft, genre: string, mood: string): string {
   const line = "─".repeat(48);
   const bridgeLabel = draft.diversityReport?.dnaMode === "CHAOS MODE" ? "BREAK" : "BRIDGE";
-  const emotions = inferLyricsEmotions(
-    {
-      intro: draft.intro,
-      hook: draft.hook,
-      verse1: draft.verse1,
-      verse2: draft.verse2,
-      bridge: draft.bridge,
-      outro: draft.outro,
-    },
-    mood,
-  );
+
+  // Mirror the UI's emotion-tag priority: prefer server-side Stage 2 LLaMA tags
+  // (draft.emotionTags) when available; fall back to client-side keyword inference.
+  const serverTags = draft.emotionTags && Object.keys(draft.emotionTags).length > 0
+    ? draft.emotionTags
+    : null;
+  const clientEmotions = !serverTags
+    ? inferLyricsEmotions(
+        { intro: draft.intro, hook: draft.hook, verse1: draft.verse1, verse2: draft.verse2, bridge: draft.bridge, outro: draft.outro },
+        mood,
+      )
+    : null;
+  const getEmotion = (role: SectionRole): string | undefined =>
+    serverTags?.[role] ?? clientEmotions?.[role] ?? undefined;
+
   const push = (label: string, role: SectionRole, lines?: string[]) =>
     lines?.length ? [{ label, role, lines }] : [];
   const orderedSections = [
@@ -874,7 +878,10 @@ export function formatDraftForClipboard(draft: SongDraft, genre: string, mood: s
   ];
 
   for (const section of orderedSections) {
-    const decorated = decorateSectionLabel(section.label, emotions[section.role]);
+    const emotion = getEmotion(section.role);
+    const decorated = emotion
+      ? `${section.label} - ${emotion}`
+      : section.label;
     sections.push(`[ ${decorated} ]`, ...section.lines, "");
   }
 

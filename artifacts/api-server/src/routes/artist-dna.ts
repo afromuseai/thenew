@@ -15,9 +15,10 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 
 function getOpenAI(): OpenAI {
-  const key = process.env["OPENAI_API_KEY"];
-  if (!key) throw new Error("OPENAI_API_KEY not configured");
-  return new OpenAI({ apiKey: key });
+  const key = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"] || process.env["OPENAI_API_KEY"];
+  const baseURL = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
+  if (!key) throw new Error("OpenAI API key not configured");
+  return new OpenAI({ apiKey: key, ...(baseURL ? { baseURL } : {}) });
 }
 
 interface ArtistDna {

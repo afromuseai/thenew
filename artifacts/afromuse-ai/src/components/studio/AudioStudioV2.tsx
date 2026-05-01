@@ -14,8 +14,6 @@ import type { SongDraft } from "@/lib/songGenerator";
 import { formatDraftForClipboard } from "@/lib/songGenerator";
 import {
   inferLyricsEmotions,
-  decorateSectionLabel,
-  type EmotionTag,
 } from "@/lib/lyricsEmotion";
 import { buildFullIntelligence, type FullIntelligence, type ExportNoteBlock } from "@/lib/audioIntelligence";
 import AudioPlayer from "@/components/audio/AudioPlayer";
@@ -288,37 +286,38 @@ function hashString(s: string): number {
 function extractLyricsForTextarea(draft: SongDraft | null, mood: string = ""): string {
   if (!draft) return "";
 
-  // Infer per-section emotion tags so labels carry the performance intent
-  // through to the audio textarea — e.g. [Chorus - Anthemic / Energetic]
-  // instead of a bare [Chorus]. The same map is also sent to the backend
-  // alongside lyricsSections so the AI music model receives the same hints.
-  const emotions = inferLyricsEmotions(
-    {
-      intro:  draft.intro  ?? [],
-      hook:   draft.hook   ?? [],
-      verse1: draft.verse1 ?? [],
-      verse2: draft.verse2 ?? [],
-      bridge: draft.bridge ?? [],
-      outro:  draft.outro  ?? [],
-    },
-    mood,
-  );
+  // Mirror Studio.tsx priority: prefer server-side Stage 2 LLaMA emotion tags
+  // (draft.emotionTags) when available — e.g. "Hollow Heart Drift" — and only
+  // fall back to client-side keyword inference for older drafts without them.
+  const serverTags = draft.emotionTags && Object.keys(draft.emotionTags).length > 0
+    ? draft.emotionTags
+    : null;
+  const clientEmotions = !serverTags
+    ? inferLyricsEmotions(
+        { intro: draft.intro ?? [], hook: draft.hook ?? [], verse1: draft.verse1 ?? [], verse2: draft.verse2 ?? [], bridge: draft.bridge ?? [], outro: draft.outro ?? [] },
+        mood,
+      )
+    : null;
+  const getEmotion = (role: "intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro"): string | undefined =>
+    serverTags?.[role] ?? clientEmotions?.[role] ?? undefined;
 
   const out: string[] = [];
-  const push = (label: string, lines?: string[], emotion?: EmotionTag) => {
+  const push = (label: string, role: "intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro", lines?: string[]) => {
     if (!lines || lines.length === 0) return;
-    out.push(`[${decorateSectionLabel(label, emotion)}]`, ...lines, "");
+    const emotion = getEmotion(role);
+    const decorated = emotion ? `${label} - ${emotion}` : label;
+    out.push(`[${decorated}]`, ...lines, "");
   };
   const bridgeLabel =
     draft.diversityReport?.dnaMode === "CHAOS MODE" ? "Break" : "Bridge";
-  push("Intro",   draft.intro,  emotions.intro);
-  push("Chorus",  draft.hook,   emotions.hook);
-  push("Verse 1", draft.verse1, emotions.verse1);
-  push("Chorus",  draft.hook,   emotions.hook);
-  push("Verse 2", draft.verse2, emotions.verse2);
-  push("Chorus",  draft.hook,   emotions.hook);
-  push(bridgeLabel, draft.bridge, emotions.bridge);
-  push("Outro",   draft.outro,  emotions.outro);
+  push("Intro",   "intro",  draft.intro);
+  push("Chorus",  "hook",   draft.hook);
+  push("Verse 1", "verse1", draft.verse1);
+  push("Chorus",  "hook",   draft.hook);
+  push("Verse 2", "verse2", draft.verse2);
+  push("Chorus",  "hook",   draft.hook);
+  push(bridgeLabel, "bridge", draft.bridge);
+  push("Outro",   "outro",  draft.outro);
   return out.join("\n").trim();
 }
 
@@ -1900,21 +1899,30 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
           outro:  draft.outro  && draft.outro.length  > 0 ? draft.outro  : undefined,
         };
 
-        // Per-section emotion tags — same map the textarea uses to render
-        // [Chorus - Anthemic / Energetic] style labels. Sent to the backend
-        // so the AI music model receives the same performance hints baked
-        // into the lyrics block, not bare [Chorus] markers.
-        const studioSectionEmotions = inferLyricsEmotions(
-          {
-            intro:  draft.intro  ?? [],
-            hook:   draft.hook   ?? [],
-            verse1: draft.verse1 ?? [],
-            verse2: draft.verse2 ?? [],
-            bridge: draft.bridge ?? [],
-            outro:  draft.outro  ?? [],
-          },
-          mood,
-        );
+        // Per-section emotion tags — sent to the backend so the AI music model
+        // receives [Chorus - Anthemic / Energetic] style labels, not bare [Chorus].
+        // Mirror the same priority used by the textarea and clipboard: prefer
+        // server-side Stage 2 LLaMA tags (draft.emotionTags) when present,
+        // fall back to client-side keyword inference for older drafts.
+        const studioSectionEmotions =
+          draft.emotionTags && Object.keys(draft.emotionTags).length > 0
+            ? draft.emotionTags
+            : inferLyricsEmotions(
+                {
+                  intro:  draft.intro  ?? [],
+                  hook:   draft.hook   ?? [],
+                  verse1: draft.verse1 ?? [],
+                  verse2: draft.verse2 ?? [],
+                  bridge: draft.bridge ?? [],
+                  outro:  draft.outro  ?? [],
+                },
+                mood,
+              );
+
+        // Build flat lyrics text from the draft sections so the AI Music API
+        // prompt and NVIDIA brief both receive the lyrics influence signal
+        // (the same as audioLyrics does in standard mode).
+        const studioLyricsText = extractLyricsForTextarea(draft, mood);
 
         payload = {
           title:          (draft.title || audioTrackTitle).trim() || undefined,
@@ -1923,6 +1931,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
           style:          studioStyle || undefined,
           lyricsSections: studioSections,
           sectionEmotions: studioSectionEmotions,
+          lyricsText:     studioLyricsText || undefined,
           buildMode:      "full",
           // Required for backend routing — keep model selection but strip everything else.
           aiMusicModel:   aiMusicModel || undefined,
