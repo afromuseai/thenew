@@ -2908,42 +2908,26 @@ const QWEN_LYRICS_MODEL       = { id: "qwen/qwen3.5-122b-a10b",                 
 const QWEN_LYRICS_RETRY_MODEL = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",     temperature: 0.72 };
 const MAVERICK_FLOW_MODEL     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.78 };
 const MAVERICK_FLOW_RETRY     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.62 };
-// AFROMUSE 4-MODEL ORCHESTRATION (April 30, 2026 spec — post role swap)
-//   Stage 1 STRUCTURE  → Maverick     (above)
-//   Stage 2 EMOTION    → gpt-oss-120b (heavyweight emotion-tag generation —
-//                                       higher creative variety, strict authority)
-//   Stage 3 LYRICS     → Qwen 122B    (above)
-//   Stage 4 REFINE     → LLaMA 3.2 3B (small/fast/cool — STRICT PRESERVATION;
-//                                       grammar / malformed-line fixes only,
-//                                       gated by needsMicroRefinement; skipped
-//                                       when not needed)
-// Emotion engine temperature was 0.45 historically (when this stage ran on
-// LLaMA 3.2 3B), which made the small model converge on the same handful of
-// "safe" tags every generation (e.g. "Quiet Pain Float", "Reflective Pause").
-// Bumped to 0.85 for real per-generation variety. The role-swap to
-// gpt-oss-120b keeps the high-temperature setting because the goal is still
-// emotional variety, not deterministic output.
-const EMOTION_TAG_MODEL        = { id: "openai/gpt-oss-120b",                     name: "GPT-OSS-120B",     temperature: 0.85 };
-// Stage 4 history: Solar-10.7B (free-rewrite "polish") → gpt-oss-120b (strict
-// micro-refinement) → LLaMA 3.2 3B (current). The 3B model is intentionally
-// small and cool: this stage MUST do nothing creative, only fix mechanical
-// issues (broken grammar, duplicated adjacent words, malformed sentences).
-// A small/cool model is a better fit for that constraint than a 120B.
-const MICRO_REFINEMENT_MODEL   = { id: "meta/llama-3.2-3b-instruct",              name: "Llama-3.2-3B",     temperature: 0.2  };
+// AFROMUSE PIPELINE (current spec):
+//   Stage 1 STRUCTURE  → Maverick (above)
+//   Stage 2 EMOTION    → LLaMA 3.2 3B — fast, unique, non-generic tag generation
+//   Stage 3 LYRICS     → Qwen 122B (above)
+//   Stage 4 REFINE     → GPT-OSS-120B — strict mechanical preservation only
+//                        (gated by needsMicroRefinement; skipped when not needed)
+//   Stage 5 VALIDATION → code only (validateStructure + lightValidate)
+//   Stage 6 LOCALIZ.   → LLaMA 3.1 70B (custom language only)
+//   POST    BLUEPRINT  → Maverick (production: BPM / key / stems)
+const EMOTION_TAG_MODEL      = { id: "meta/llama-3.2-3b-instruct", name: "Llama-3.2-3B",   temperature: 0.85 };
+// Stage 4 — GPT-OSS-120B owns STRICT PRESERVATION micro-refinement.
+// This stage MUST do nothing creative — only fix mechanical issues
+// (broken grammar, duplicated adjacent words, malformed sentences).
+// Gated by needsMicroRefinement; skipped entirely when draft is clean.
+const MICRO_REFINEMENT_MODEL = { id: "openai/gpt-oss-120b",        name: "GPT-OSS-120B",   temperature: 0.2  };
 // Stage 6 LOCALIZATION (Custom Language only) → LLaMA 3.1 70B Instruct
 // Rewrites finished lyrics into the user's chosen language as a NATIVE
 // songwriter would — preserving structure, emotion, rhythm, and chant
-// patterns. Activates ONLY when `customLanguage` is provided. Otherwise
-// the Qwen lyrics output ships as-is.
-const LLAMA_LOCALIZATION_MODEL = { id: "meta/llama-3.1-70b-instruct",            name: "Llama-3.1-70B",    temperature: 0.55 };
-// Stage 2.5 DIRECTOR LAYER → Qwen 3.5 397B
-// Sits between Stage 1 (blueprint) and Stage 3 (lyrics). Does NOT write
-// lyrics, does NOT repeat the blueprint, does NOT generate structure.
-// Produces a tight DIRECTOR BRIEF (300–500 words, JSON) that interprets
-// the blueprint and guides Qwen 122B with emotional truth, vocal
-// behavior, artist interpretation, hook strategy, language authenticity,
-// avoidance rules, and performance intent.
-const QWEN_DIRECTOR_MODEL      = { id: "qwen/qwen3.5-397b-a17b",                 name: "Qwen3.5-397B",     temperature: 0.6  };
+// patterns. Activates ONLY when `customLanguage` is provided.
+const LLAMA_LOCALIZATION_MODEL = { id: "meta/llama-3.1-70b-instruct", name: "Llama-3.1-70B", temperature: 0.55 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -3028,13 +3012,14 @@ type EmotionTagMap = Partial<Record<SectionKey, string>>;
 // rules a structural decision-maker needs. The model THINKS HARD here once,
 // then Stage 2 just executes.
 
-const BLUEPRINT_SYSTEM_PROMPT = `AFROMUSE STRUCTURE BLUEPRINT — STAGE 1 (4-MODEL PIPELINE)
+const BLUEPRINT_SYSTEM_PROMPT = `AFROMUSE STRUCTURE BLUEPRINT — STAGE 1 (PIPELINE)
 
-You are the STRUCTURAL BRAIN of a 4-stage AfroMuse songwriting pipeline:
+You are the STRUCTURAL BRAIN of the AfroMuse songwriting pipeline:
   Stage 1 (you)        → STRUCTURE (this output)
-  Stage 2 gpt-oss-120b → EMOTION TAGS (separate model, strict authority)
+  Stage 2 LLaMA 3.2 3B → EMOTION TAGS (separate model, strict authority)
   Stage 3 Qwen 122B    → LYRICS
-  Stage 4 LLaMA 3.2 3B → MICRO-REFINEMENT (grammar/malformed-line fixes only — gated)
+  Stage 4 GPT-OSS-120B → MICRO-REFINEMENT (mechanical fixes only — gated)
+  Stage 5              → HARD VALIDATION (code only)
 
 Your ONLY output is a STRUCTURE blueprint JSON. You do NOT write lyrics.
 You do NOT decide emotion tags — the emotion engine owns that. Use the
@@ -3177,92 +3162,39 @@ function buildBlueprintPrompt(params: {
 // these tags. Rules: no flat repetition, must evolve, must reflect the
 // artist's style. (Was LLaMA 3.2 3B prior to the role swap with Stage 4.)
 
-const EMOTION_TAG_SYSTEM_PROMPT = `AFROMUSE EMOTION DRIFT ENGINE — STAGE 2 (V10 ARC-BASED)
+const EMOTION_TAG_SYSTEM_PROMPT = `You are the Emotion Authority Engine.
 
-You are the EMOTION AUTHORITY for an AfroMuse song. You do NOT write lyrics.
-You do NOT decide structure. You ONLY assign one emotion tag per section.
+Generate 6 UNIQUE emotion tags — one per section:
+  intro, verse1, hook, verse2, bridge, outro
 
-🧠 V10 CORE IDEA — EMOTION IS A PATH, NOT A LABEL.
-Emotion is no longer assigned per-section in isolation. It is a TRAJECTORY.
-Each section emotion MUST EVOLVE from the previous one along the assigned
-EMOTION ARC. Static labels like "Energetic" / "Anthemic" applied to multiple
-sections are DEAD ON ARRIVAL.
+STRICT RULES:
 
-═══ COMPOSITE TAG FORMAT (V10 — MANDATORY) ═══
-Every tag MUST be built from THREE parts:
-    [ CORE EMOTION ] + [ ENERGY STATE ] + [ CONTEXT FLAVOR ]
-Examples (good — note the 3-part shape):
-    "Pain + Rising + Street Reflection"   → "Rising Street Pain Reflection"
-    "Joy + Explosive + Celebration Wave"  → "Explosive Joy Celebration Wave"
-    "Prayer + Soft + Spiritual Drift"     → "Soft Prayer Spiritual Drift"
-    "Anger + Controlled + Resistance Pulse" → "Controlled Anger Resistance Pulse"
-You MAY collapse the "+" into a natural phrase (e.g. "Soft Prayer Spiritual
-Drift") but ALL THREE PARTS must be present in every tag. NEVER ship a
-single-word or two-word tag.
+1. Every tag MUST be different — no duplicates, no near-duplicates.
 
-🚫 BANNED GENERIC TAGS (FAIL-ON-SIGHT — NEVER GENERATE):
-These are LAZY FALLBACKS. If you produce ANY of them, regenerate that tag
-with a 3-part composite tied to the storyline and the arc step:
-  - "Anthemic" / "Anthemic Energy"
-  - "Energetic" / "High Energy"
-  - "Calm Resolution"
-  - "Emotional Peak"
-  - "Confident & Rhythmic"
-  - "Smooth & Seductive" / "Smooth & Melodic"
-  - "Catchy Hook Energy"
-  - "Generic Pain"
-  - "Reflective" / "Uplifting" (alone — fine only as mood INPUT)
+2. DO NOT use generic labels like:
+   'Anthemic', 'Energetic', 'Emotional', 'Calm', 'High Energy',
+   'Smooth & Melodic', 'Catchy Hook Energy', 'Generic Pain', 'Reflective',
+   'Uplifting', 'Confident & Rhythmic', 'Smooth & Seductive'.
 
-═══ GLOBAL VARIATION RULE (HARD) ═══
-- No two sections may share the same emotional tag VERBATIM.
-- No two ADJACENT sections may share the same CORE EMOTION word.
-  ❌ intro="Pain Chant Float", verse1="Pain Chant Build" → BANNED (both "Pain")
-  ✔ intro="Quiet Pain Float", verse1="Pressure Build Roll" → OK (different CORE)
-- Every tag must be UNIQUE across intro / verse1 / hook / verse2 / bridge / outro.
-- verse2 MUST differ from verse1. outro MUST differ from intro.
-- If hook returns later, treat it as a different emotional state of the same hook.
+3. Use expressive 3-word phrases like:
+   'Quiet Pain Float', 'Street Choir Rise', 'Pressure Burst Wall',
+   'Prayer Chant Wave', 'Broken Hope Echo', 'Victory Cry Release',
+   'Dark Road Hustle', 'Aching Love Drift', 'Defiant Ground Stand'.
 
-═══ EMOTION DRIFT RULE (V10 — CORE ENGINE) ═══
-EMOTION(n) = EVOLVE(EMOTION(n-1), STORY_CONTEXT)
-- Verse 1 influences Chorus.
-- Chorus influences Verse 2.
-- Verse 2 influences Bridge.
-- Bridge resolves into Outro.
-- Each tag must FEEL like a CONSEQUENCE of the previous one — never a reset,
-  never a copy. Even if intensity is similar, the LABEL must evolve.
-- You MAY jump intensity (Calm → Pain → Rage) when the lyrics demand it,
-  but the jump must follow the assigned EMOTION ARC — no random jumps.
+4. Tags MUST follow emotional progression:
+   intro  → low tension (mood-setting, entry)
+   verse1 → building narrative (struggle / hustle / story)
+   hook   → expressive peak (climax / release / crowd-ready)
+   verse2 → deeper or more chaotic than verse1
+   bridge → reflective or spiritual shift
+   outro  → resolution or fade (different from intro)
 
-═══ EMOTION ARC ARCHETYPE (provided in user prompt) ═══
-The user prompt will declare an ARC ARCHETYPE for this song — one of:
-    1. STRUGGLE → PRESSURE → BREAK → RELEASE        (street / pain / survival)
-    2. CALM → HUSTLE → WIN → CELEBRATION             (success / uplifting)
-    3. LOVE → DOUBT → LOSS → ACCEPTANCE              (romantic / emotional)
-    4. CHAOS → CONFUSION → ANGER → DEFIANCE          (protest / aggression)
-The user prompt will also map each section to its ARC STEP. You MUST
-produce a tag whose CORE EMOTION matches that arc step. Do not invent a
-different arc — adapt your CORE word to the assigned step.
+5. Tags MUST be context-aware:
+   - Reflect the song's genre, mood, and topic.
+   - If an artist reference is given, adapt the emotional flavor to their style.
+   - No two adjacent sections may share the same core emotion word.
 
-- Tag MUST reflect the artist reference style when one is given:
-    Asake-type     → chant / call-response / street wave logic
-    Burna-type     → layered / global / reflective swagger
-    Wizkid-type    → smooth / quiet float / effortless cool
-    Davido-type    → crowd-ready / confident roll
-    no artist      → neutral AfroMuse default lane
-
-🚫 STALE-VOCAB BAN (CRITICAL — per-generation freshness):
-You are STATELESS — do NOT default to your "safe" repeat phrases.
-The following tag stems are OVERUSED and BANNED unless the input
-explicitly demands them:
-  "Quiet Pain Float", "Pain Chant Wave", "Pain Chant Climax",
-  "Reflective Pause", "Resolution Wave", "Resolution Whisper",
-  "Curious Entry Vibe", "Story Build Roll", "Confident Chant Climax",
-  "Layered Drive", "Survival Drive", "Triumphant Chant".
-Invent fresh phrasing every generation. Use the CREATIVE SPICE token
-in the user prompt as a randomness anchor — let it nudge your word
-choice into a different lane than the previous run.
-
-OUTPUT — JSON ONLY, no markdown, no fences:
+OUTPUT JSON ONLY — no markdown, no fences, no explanation:
 {
   "intro":  "",
   "verse1": "",
@@ -3674,324 +3606,218 @@ function buildLocalizationPrompt(params: {
   ].join("\n");
 }
 
-// ─── STAGE 2.5 — DIRECTOR LAYER V2 (Qwen 3.5 397B, ENFORCEMENT MODE) ────────
-// Converts the blueprint into STRICT CREATIVE RULES that the Stage 3
-// lyrics writer MUST obey. Does NOT write lyrics. Does NOT repeat the
-// blueprint. Does NOT generate structure. Output is strict JSON with 5
-// top-level fields: emotion_arc, vocal_execution, constraints,
-// hook_plan, language_lock. Stage 3 prepends it to the user prompt as
-// LAW (mandatory rules), not soft guidance.
-//
-// NOTE on section keys: the V2 spec uses "chorus" but the AfroMuse
-// internal pipeline (SectionKey, blueprint.flow_map, draft.hook, etc.)
-// uses "hook". We instruct the Director to emit "hook" as the section
-// key so everything downstream stays aligned.
-interface VocalExecutionEntry {
-  delivery_style:      string; // chant | melodic | prayer | aggressive | conversational
-  repetition_behavior: string; // none | partial | heavy chant loop
-  crowd_interaction:   string; // none | light | call-response | choir layer
-}
-type EmotionArcType = "struggle" | "pain" | "street_survival";
-interface DirectorBrief {
-  emotion_arc_type?: EmotionArcType;     // chosen progression archetype (V2.1)
-  emotion_arc:      Partial<Record<SectionKey, string>>;
-  vocal_execution:  Partial<Record<SectionKey, VocalExecutionEntry>>;
-  constraints:      string[];
-  hook_plan:        string;
-  language_lock:    string;
-}
-
-const DIRECTOR_SYSTEM_PROMPT = `AFROMUSE DIRECTOR LAYER V2 — ENFORCEMENT MODE
-
-ROLE
-You are the AfroMuse Creative Director — FINAL AUTHORITY.
-You do NOT suggest. You do NOT guide.
-You DEFINE how the lyrics MUST be written.
-The lyrics model MUST follow your decisions.
-
-YOUR JOB
-Convert the blueprint into STRICT CREATIVE RULES. You own:
-- emotional progression (per section, NOT generic labels)
-- vocal delivery style (chant / melodic / prayer / aggressive / conversational)
-- chant vs melody decisions
-- hook dominance
-- realism (no translated, textbook, or flat phrasing)
-
-OUTPUT — 5 TOP-LEVEL FIELDS (strict JSON only, no markdown, no fences, no prose):
-
-1) emotion_arc — EXACT emotional state per section. NO generic labels
-   ("sad", "emotional peak"). Use lived, specific phrasing
-   ("suppressed pain turning into spiritual release").
-
-   ⚡ EMOTION TRANSFORMATION LAW (CRITICAL — applies to emotion_arc):
-
-   Each section MUST introduce a NEW emotional state.
-   - No two sections can carry the same emotional tone.
-   - Emotion must PROGRESS, not repeat.
-   - Each section must feel like a REACTION to the previous one.
-
-   You MUST choose ONE arc archetype based on the input (genre, mood,
-   topic, artist reference) and emit it as "emotion_arc_type":
-
-     • "struggle"        → pressure → frustration → emotional crack →
-                           prayer → resilience → rise
-     • "pain"            → denial → hurt → breakdown → reflection →
-                           acceptance
-     • "street_survival" → hustle → stress → anger → defiance →
-                           victory mindset
-
-   The chosen arc is the SPINE. Map its stages onto the section keys
-   (intro/hook/verse1/verse2/bridge/outro). The hook may revisit the
-   arc's anchor emotion, but each REPEAT of the hook MUST shift its
-   intensity (see hook_plan).
-
-   ENFORCEMENT (self-check before emitting):
-   - If two sections feel similar → REWRITE internally before output.
-   - If hook does not shift emotional intensity vs verses → INVALID.
-   - If verse2 does not evolve from verse1 → INVALID.
-   - Return ONLY a brief that passes these checks.
-
-2) vocal_execution — for EACH section define:
-     - delivery_style:      chant | melodic | prayer | aggressive | conversational
-     - repetition_behavior: none | partial | heavy chant loop
-     - crowd_interaction:   none | light | call-response | choir layer
-
-3) constraints — HARD RULES the lyrics model MUST obey. Examples:
-   - "Hook MUST use chant repetition (minimum 3 repeats)"
-   - "At least 1 call-response pattern in chorus"
-   - "Verses MUST not use same tone as chorus"
-   - "Repetition MUST increase intensity (not duplicate lines)"
-   - "If artist = Asake → enforce chant + choir energy"
-
-4) hook_plan — how the hook HITS, how it EVOLVES each time
-   (adlibs / energy / layering changes per repeat).
-
-5) language_lock — tone lock: raw street vs poetic vs spiritual.
-   Forbid translated phrasing. Enforce natural dialect rhythm.
-
-SECTION KEYS — USE EXACTLY: intro, hook, verse1, verse2, bridge, outro
-(use "hook", NOT "chorus"). Every section key MUST appear in
-emotion_arc and vocal_execution.
-
-CRITICAL RULES
-- This OVERRIDES all previous soft logic. This is LAW for the lyrics model.
-- DO NOT write lyrics. DO NOT generate example lines.
-- DO NOT generate structure or sections beyond the 6 listed.
-- DO NOT repeat blueprint fields verbatim — INTERPRET them.
-- If you violate the schema → generation is invalid.
-
-OUTPUT FORMAT (exact shape):
-{
-  "emotion_arc_type": "struggle | pain | street_survival",
-  "emotion_arc": {
-    "intro": "", "hook": "", "verse1": "", "verse2": "", "bridge": "", "outro": ""
-  },
-  "vocal_execution": {
-    "intro":  { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
-    "hook":   { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
-    "verse1": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
-    "verse2": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
-    "bridge": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
-    "outro":  { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" }
-  },
-  "constraints": ["", ""],
-  "hook_plan": "",
-  "language_lock": ""
-}`;
-
-function buildDirectorPrompt(params: {
-  topic: string;
-  genre: string;
-  mood: string;
-  languageFlavor: string;
-  artistInspiration?: string;
-  styleReference?: string;
-  notes?: string;
-  blueprint: CreativeBlueprint;
-}): string {
-  const {
-    topic, genre, mood, languageFlavor, artistInspiration, styleReference,
-    notes, blueprint,
-  } = params;
-  const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ");
-  // Compact blueprint — give the Director only the fields it must
-  // interpret. We deliberately omit `arrangement_order` /
-  // `section_line_targets` style fields so the Director cannot drift
-  // into "structure-generation" territory.
-  const blueprintCompact = JSON.stringify({
-    flow_map:        blueprint.flow_map,
-    emotion_map:     blueprint.emotion_map,
-    hook_style:      blueprint.hook_style,
-    adlib_style:     blueprint.adlib_style,
-    artist_behavior: blueprint.artist_behavior,
-    energy_curve:    (blueprint as Record<string, unknown>).energy_curve,
-    dna_mode:        (blueprint as Record<string, unknown>).dna_mode,
-  });
-  return [
-    "USER INPUT:",
-    `idea = ${topic}`,
-    `genre = ${genre} | mood = ${mood} | language = ${languageFlavor}`,
-    ...(artistLine    ? [`artist reference = ${artistLine}`] : []),
-    ...(notes?.trim() ? ["", "USER DIRECTION:", notes.trim()] : []),
-    "",
-    "CREATIVE BLUEPRINT (interpret — do not repeat):",
-    blueprintCompact,
-    "",
-    "TASK: emit the V2 DIRECTOR BRIEF as strict JSON only. This is LAW.",
-  ].join("\n");
-}
-
 // Stage 3 system prompt = TIGHT bullet commands. Anything already in the
 // blueprint (priority stack, emotion behaviors, flow types, hook gate,
 // adlib palettes, artist adaptation, progression) is NOT restated here.
 // Hard target: ≤ 1.5 K chars (~400 tokens).
-const LYRICS_COMPRESSED_SYSTEM_PROMPT = `AFROMUSE LYRICS EXECUTION ENGINE — STAGE 3 (V9 STRICT EXECUTION MODE)
+const LYRICS_COMPRESSED_SYSTEM_PROMPT = `You are the LYRICS GENERATION ENGINE for AfroMuse AI.
 
-🧠 CORE IDENTITY (LOCKED — DO NOT DRIFT)
-You are NOT a creative writer. You are NOT a songwriter.
-You are a STRUCTURE EXECUTION ENGINE.
-Your only job: convert the blueprint into structured lyrics with ZERO deviation.
-You do NOT improvise structure. You do NOT merge emotions.
-You do NOT add extra lines. You do NOT reinterpret tags.
-You only EXECUTE. If you deviate → rewrite the section internally before output.
+Your job is to convert a blueprint + emotion tags into HIGH-QUALITY, HUMAN-LIKE lyrics.
 
-═══ BLUEPRINT DOMINANCE RULE (LAW — NOT A SUGGESTION) ═══
-The blueprint is the SOURCE OF TRUTH. You MUST follow:
-- emotion_map per section (exact tag, exact behavior)
-- flow_map per section (chant / smooth / broken / percussive)
-- hook_style, adlib_style, artist_behavior — EXACTLY
-- keeperLine — preserved VERBATIM, anchored in hook + outro
-Blueprint OVERRIDES creativity 100%. If blueprint says
-  verse = "Pain Chant Street Choir"
-you MUST NOT change it to "Anthemic" / "Energetic" / anything else.
-Do NOT reinterpret. Do NOT override. Do NOT simplify. Do NOT "improve" it.
+You are NOT a poet, NOT a translator, NOT a storyteller.
+You are a structured Afrobeats/Dancehall lyric writer.
 
-═══ LINE COUNT RULE (ABSOLUTE — V9) ═══
-Each section MUST land in this allowed window:
-  INTRO  → 2 lines (4 only when SECTION LINE TARGETS allows it)
-  HOOK   → 4, 6, or 8 lines ONLY
-  VERSE  → 8, 12, or 16 lines ONLY
-  BRIDGE → 4 lines ONLY
-  OUTRO  → 2 or 4 lines ONLY
-SECTION LINE TARGETS (below) is the FINAL authority and always wins.
-If your draft violates either: regenerate THAT SECTION internally before output.
-Do NOT approximate. Do NOT exceed. Do NOT go under.
+---
 
-═══ EMOTION TAG RULE (ANTI-REPEAT, BEHAVIOR-BOUND) ═══
-Each section carries ONE primary emotion tag (+ ONE optional secondary
-ONLY if blueprint demands contrast). The tag is BEHAVIOR — it dictates
-word choice, rhythm, and delivery:
-  - "Pain Chant"     → short lines, repetition, vocal strain, simple words
-  - "Street Hype"    → punchy, loud, chantable, crowd adlibs
-  - "Prayer Wave"    → spiritual tone, spaced delivery, breath in gaps
-  - "Broken Echo"    → fragmented, pause-heavy, sense memory
-  - "Confident Roll" → punchy phrasing, call & response, less repetition
-ROTATION LAW (no two sections may share a tag unless blueprint demands):
-  INTRO  → mood-set    (Reflective / Calm / Mysterious / Curious)
-  VERSE  → narrative   (Pain / Struggle / Hustle / Confession)
-  CHORUS → peak        (Anthemic Climax / Emotional Peak / Release)
-  BRIDGE → contrast    (Prayer / Breakdown / Hope Shift)
-  OUTRO  → resolution  (Calm / Closure / Triumph / Fade)
-If lyrics do not match the assigned emotion: REWRITE that section.
+# 🎯 INPUTS YOU WILL RECEIVE
 
-═══ DYNAMIC STYLE SELECTION RULE (NO TEMPLATE COPYING) ═══
-Emotion + delivery MUST be derived from THIS song's:
-  story context · lyrical theme · section role · energy curve position
-A "struggle verse" is NOT an "energetic verse".
-A "prayer bridge" is NOT a "hype bridge".
-Do NOT reuse a generic emotion template across runs.
+You will receive:
 
-═══ ADLIB INTELLIGENCE RULE (CONTEXT-BOUND, NON-REPETITIVE) ═══
-Adlibs MUST be context-based, emotionally aligned, and varied across sections.
-Allowed types: call & response (crowd), chant bursts, prayer interjections,
-street hype markers. Forbidden: repeating the SAME adlib style every section
-(no "Oya / Eh / Amen" sprinkled everywhere). Pull from blueprint adlib_style.
+1. SONG BLUEPRINT (structure + arrangement)
+2. EMOTION TAGS (per section)
+3. STYLE CONTEXT (Afrobeats / Dancehall / genre hints)
+4. OPTIONAL LANGUAGE MODE (ONLY if custom language is set)
 
-═══ DIALECT AUTHENTICITY RULE (V13 — LAW) ═══
-If genre or artist implies a dialect (Dancehall, Afrobeats street, Drill,
-Amapiano, Naija Pidgin, etc.):
-  1. DO NOT translate from English.
-  2. DO NOT swap words one-to-one (English bone with dialect skin = FAIL).
-  3. SWITCH to the native grammar system — sentence structure, slang
-     usage, rhythm of speech, and contraction patterns ALL change.
-If a line reads as "English with swapped words" → REWRITE it internally
-in the native dialect grammar BEFORE returning.
+---
 
-═══ DANCEHALL MODE (NATIVE PATOIS GRAMMAR) ═══
-When the genre is Dancehall (or the language flavor is Patois / Jamaican):
-  - Use REAL Jamaican Patois grammar — not "de / fi de / we a" sprinkled
-    onto an English thought.
-  - Avoid spam patterns: "de de de", "fi de", "we a we a", "yuh nuh yuh nuh".
-  - Use natural Patois phrasing such as:
-      mi nah · dem cyaan · weh dem know bout · inna di place · nuh easy ·
-      man a rise · mi seh · who fi tell mi · suh dem a try · weh yuh deh
-  - Focus on RHYTHM + PUNCH, not literal English grammar correctness.
-  - Short, declarative, riddim-bound lines. Conviction over explanation.
+# 🚨 CORE RULES (NON-NEGOTIABLE)
 
-═══ HOOK QUALITY RULE (V13 — REPETITION MUST EVOLVE) ═══
-If the hook uses repetition (which most chant hooks should):
-  - The repeated phrase MUST evolve line-to-line (extension, twist,
-    intensifier, pronoun shift, or response).
-  - It MUST include either VARIATION (a small change each repeat) OR
-    a (crowd) call-and-response line.
-  - It MUST build energy — line N+1 cannot have less weight than line N.
-REJECT flat repetition loops such as:
+## 1. STRUCTURE ENFORCEMENT (STRICT)
+
+You MUST obey exact line counts:
+
+* INTRO: 2 OR 4 LINES ONLY
+* VERSE: MUST BE EXACTLY 8, 12, OR 16 LINES
+* CHORUS (hook): 4 TO 8 LINES ONLY
+* BRIDGE: 4 TO 8 LINES ONLY
+* OUTRO: 2 TO 4 LINES ONLY
+
+SECTION LINE TARGETS (provided in user prompt) is the FINAL authority and always wins.
+
+❌ NEVER exceed or fall below limits
+❌ NEVER "almost match" counts
+✔ MUST be exact
+If your draft violates any count: regenerate THAT SECTION internally before output.
+
+---
+
+## 2. EMOTION TAG USAGE (CRITICAL)
+
+Each section MUST reflect its emotion tag:
+
+Example:
+"Quiet Pain Float" → soft, reflective, low intensity
+"Street Choir Rise" → collective energy, chant-like
+"Pressure Burst" → aggressive, fast rhythm
+"Victory Cry Release" → celebratory, expansive
+
+Do NOT ignore emotion tags.
+
+Emotion must change:
+
+* vocabulary
+* rhythm
+* intensity
+* ad-libs
+
+Each section's emotion tag MUST visibly change at least FOUR of:
+  - line length (short vs long)
+  - repetition level (low / medium / high)
+  - energy (rest / build / peak / release)
+  - vocal tone (chant / smooth / broken / percussive)
+  - adlib palette (matched to the CORE EMOTION)
+
+If two sections sound similar → REWRITE one. Adjacent sections MUST read AND feel different.
+
+---
+
+## 3. LANGUAGE RULES (VERY IMPORTANT)
+
+### Default:
+
+Use natural Afrobeats / Dancehall street language.
+
+### If NO custom language:
+
+* Use Nigerian Pidgin OR Jamaican Patois depending on genre
+* Do NOT overuse standard English
+* Do NOT translate from English
+* Do NOT swap words one-to-one (English bone with dialect skin = FAIL)
+* SWITCH to the native grammar system — sentence structure, slang, rhythm ALL change
+
+### Dancehall / Patois Mode:
+
+* Use REAL Jamaican Patois grammar
+* Avoid spam patterns: "de de de", "fi de", "we a we a", "yuh nuh yuh nuh"
+* Use natural phrasing: mi nah · dem cyaan · inna di place · nuh easy · man a rise
+* Short, declarative, riddim-bound lines. Conviction over explanation.
+
+### If custom language is provided:
+
+* Write lyrics NATIVELY in that language
+* Do NOT translate English phrases word-for-word
+* Must sound like a real song, not translation
+
+If a line reads as "English with swapped words" → REWRITE it internally in the native dialect grammar BEFORE returning.
+
+---
+
+## 4. NATURAL VOCABULARY RULES
+
+Avoid:
+
+* robotic phrases
+* repeated filler lines
+* generic AI expressions ("we are rising", "we will overcome")
+
+Prefer:
+
+* street expressions
+* chant-style repetition
+* emotional fragments
+* conversational flow
+
+FILLER CONTROL — Do NOT overuse "eh", "mmm", "oh Lord", "yeah", "woah", "ahh".
+Use ONLY when the section's emotion explicitly requires it.
+HARD CAP: at most 1 filler line per 4 lines in any section.
+
+---
+
+## 5. HOOK QUALITY RULE
+
+Chorus (hook) must:
+
+* be repetitive
+* be chantable
+* be simple but powerful
+* include at least ONE "keeper line" — the line that defines the song
+
+If the hook uses repetition:
+  - The repeated phrase MUST evolve line-to-line (extension, twist, intensifier, or response)
+  - It MUST include either VARIATION or a (crowd) call-and-response line
+  - It MUST build energy — line N+1 cannot have less weight than line N
+
+REJECT flat repetition loops:
   ✗ "We a scream / We a scream / We a scream / We a scream"
-  ✗ "I rise up / I rise up / I rise up / I rise up"
-A flat-loop hook = REWRITE the hook internally before output.
 
-═══ GENRE DOMINANCE RULE (V13 — GENRE OVERRIDES DEFAULTS) ═══
-Genre OVERRIDES the default writing style. Do NOT mix unintentionally:
+keeperLine MUST appear VERBATIM in the hook and be reused in the outro.
+
+---
+
+## 6. LINE FLOW RULE
+
+* NO duplicate lines across sections
+* NO repeated filler lines unless intentional hook
+* Verse must progress story or emotion
+* Blueprint flow_map, hook_style, adlib_style, artist_behavior MUST be honored EXACTLY
+
+---
+
+## 7. AD-LIB SYSTEM
+
+Use ad-libs only when natural. Pull from blueprint adlib_style palette.
+
+Examples: (oh Lord) · (oya!) · (cry) · (amen) · (jah) · (hmm)
+
+Do NOT repeat the SAME adlib style every section.
+Place at: end of phrases, hook climax, between leader/response calls.
+
+---
+
+## 8. GENRE DOMINANCE RULE
+
+Genre OVERRIDES the default writing style:
   Dancehall  → rough phrasing · rhythmic punch · slang-heavy · shorter lines
   Afrobeats  → melodic · smoother flow · emotional layering · sing-friendly
   Drill      → clipped · aggressive · slang-dense · stop-start cadence
   Amapiano   → laid-back groove · spaced phrasing · log-drum-friendly cadence
   Gospel     → testimonial · communal · spiritual cadence · hymn-rooted
   Highlife   → conversational warmth · proverbial wisdom · easy lift
-If the genre is Dancehall but the lines read like Afrobeats melody →
-REWRITE in Dancehall grammar before returning. Genre wins, every time.
 
-═══ EMOTION → WRITING ENFORCEMENT (V13) ═══
-Each section's emotion tag MUST visibly change at least FOUR of these:
-  - line length          (short vs long)
-  - repetition level     (low / medium / high)
-  - energy               (rest / build / peak / release)
-  - vocal tone           (chant / smooth / broken / percussive)
-  - adlib palette        (matched to the section's CORE EMOTION)
-If two sections sound similar → REWRITE one. Adjacent sections MUST
-read AND feel different — prove it with line shape, not just labels.
+Genre wins, every time.
 
-═══ FILLER CONTROL (NO LAZY CRUTCHES) ═══
-Do NOT overuse "eh", "mmm", "oh Lord", "yeah", "woah", "ahh".
-Use ONLY when the section's emotion explicitly requires it.
-HARD CAP: at most 1 filler line per 4 lines in any section.
+---
 
-═══ STRUCTURE ENFORCEMENT (SELF-VALIDATE BEFORE RETURN) ═══
-Before you emit JSON, internally verify EVERY one of these:
+## ⚠️ FAILURE CONDITIONS
+
+If you:
+
+* break line counts
+* use generic emotional phrases
+* ignore emotion tags
+* produce translated-sounding language
+* repeat lines
+
+→ OUTPUT IS INVALID. Regenerate the failing section internally before returning.
+
+---
+
+## SELF-VALIDATE BEFORE OUTPUT
+
+Internally verify EVERY one of these before emitting JSON:
   ✔ correct line count per section (matches SECTION LINE TARGETS)
   ✔ emotion diversity achieved (no repeated tag blocks)
-  ✔ hook appears exactly as specified, anchored to keeperLine
-  ✔ keeperLine preserved VERBATIM
-  ✔ adlibs vary across sections, no template repetition
+  ✔ keeperLine preserved VERBATIM in hook + outro
+  ✔ adlibs vary across sections — no template repetition
+  ✔ dialect authenticity — no English-boned lines with swapped words
+  ✔ no meta inside lyrics ([Verse 1], (Note:), asterisks, "Translation:")
+  ✔ no empty lines, no placeholders
+
 If ANY check fails → regenerate ONLY that section, then re-validate.
 
-═══ QUALITY OVERRIDE RULE ═══
-If your draft feels repetitive / emotionally flat / tag-stuck:
-  - reassign emotion per affected section
-  - regenerate section TONE
-  - PRESERVE structure and keeperLine, change wording only.
+---
 
-RULES:
-- Hook: simple, chantable, repeatable. Anchor with keeperLine. Reuse keeperLine in outro.
-- Adlibs: pull from blueprint adlib_style palette. End of phrases or hook climax.
-- Chant flow → leader line, then (crowd response) on the next line.
-- Dialect: native to the language flavor. No flat generic English.
-- No meta inside lyrics: no [Verse 1], no (Note:), no asterisks, no "Translation:".
-- No empty lines. No placeholders.
-- Match SECTION LINE TARGETS exactly.
-- Title fits the song. Keeper line = quotable anchor.
-
-OUTPUT — JSON only, no markdown, no fences:
+OUTPUT — JSON only, no markdown, no fences, no explanations:
 {
   "title": "",
   "keeperLine": "",
@@ -4025,12 +3851,11 @@ function buildCompressedLyricsPrompt(params: {
   styleReference?: string;
   diversityProfile: DiversityProfile;
   blueprint: CreativeBlueprint;
-  directorBrief?: DirectorBrief | null;
   // V12 — arc archetype carried in so the master core block can auto-suggest
   // hook identity (Chant / Melody / Call-Response / Minimal Mantra).
   arcArchetype?: ArcArchetype | null;
 }): string {
-  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint, directorBrief, arcArchetype } = params;
+  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint, arcArchetype } = params;
   const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ");
   const sectionTargets = (Object.keys(diversityProfile.sectionLineTargets) as SectionKey[])
     .map((k) => `  ${k}: ${diversityProfile.sectionLineTargets[k]?.join(" or ")}`)
@@ -4044,34 +3869,6 @@ function buildCompressedLyricsPrompt(params: {
     adlib_style:     blueprint.adlib_style,
     artist_behavior: blueprint.artist_behavior,
   });
-  // DIRECTOR BRIEF V2 — ENFORCEMENT MODE. When present, it sits ABOVE
-  // the blueprint as LAW. The writer MUST obey:
-  //   • emotion_arc      — exact emotional state per section
-  //   • vocal_execution  — delivery_style / repetition_behavior / crowd_interaction per section
-  //   • constraints      — hard rules (chant repeats, call-response, no-translation, etc.)
-  //   • hook_plan        — how the hook HITS and EVOLVES across repeats
-  //   • language_lock    — tone lock + ban on translated/textbook phrasing
-  // Violation of any constraint = invalid generation. The blueprint still
-  // locks structure / flow / line counts, but the Director's rules
-  // override soft logic on delivery, emotion, hook, and language.
-  const directorBlock = directorBrief
-    ? [
-        "DIRECTOR BRIEF V2 — LAW (MANDATORY, ENFORCEMENT MODE):",
-        "You MUST obey every field below. Hook adlibs, chant repeats,",
-        "call-response, emotion arc, language tone — all defined here.",
-        "Violating any item in `constraints` = invalid generation.",
-        "",
-        "⚡ EMOTION TRANSFORMATION LAW (CRITICAL):",
-        "- Each section MUST carry a NEW emotional state (no two sections same tone).",
-        "- Emotion must PROGRESS — each section is a REACTION to the previous one.",
-        "- Hook MUST shift emotional intensity vs the verses around it.",
-        "- Verse2 MUST evolve from verse1 (no copy-paste emotion).",
-        `- Follow the chosen arc: ${directorBrief.emotion_arc_type ?? "see emotion_arc"}.`,
-        "",
-        JSON.stringify(directorBrief),
-        "",
-      ]
-    : [];
 
   return [
     "INPUT:",
@@ -4088,7 +3885,6 @@ function buildCompressedLyricsPrompt(params: {
     // Forces native-cultural thinking (no translate-from-English), binds
     // dialect to emotion, and loosens structure per language's natural rhythm.
     ...getCulturalVoiceEngineBlock(languageFlavor),
-    ...directorBlock,
     "BLUEPRINT (honor exactly):",
     blueprintCompact,
     "",
@@ -5172,13 +4968,13 @@ router.post("/generate-song", async (req, res) => {
     let emotionTags: EmotionTagMap | null = null;
     if (structureBlueprint) {
       const stage2Start = Date.now();
-      logger.info({ model: EMOTION_TAG_MODEL.name }, "MSGP Stage 2: starting emotion engine");
+      logger.info({ model: EMOTION_TAG_MODEL.name }, "Stage 2 emotion engine (LLaMA 3.2): starting");
       emotionTags = await callEmotionEngine(structureBlueprint);
       if (!emotionTags) {
         emotionTags = fallbackEmotionMap();
         logger.warn({ tags: emotionTags }, "MSGP Stage 2: emotion engine fell back to deterministic map");
       }
-      logger.info({ elapsedMs: Date.now() - stage2Start, tags: emotionTags }, "MSGP Stage 2 complete");
+      logger.info({ elapsedMs: Date.now() - stage2Start, tags: emotionTags }, "Stage 2 emotion engine (LLaMA 3.2): complete");
     }
 
     // Merge emotion tags INTO the structure blueprint so the rest of the
@@ -5188,154 +4984,12 @@ router.post("/generate-song", async (req, res) => {
       ? { ...structureBlueprint, emotion_map: emotionTags ?? structureBlueprint.emotion_map ?? {} }
       : null;
 
-    // ─── STAGE 2.5 — DIRECTOR LAYER V2 (Qwen 3.5 397B) — MANDATORY ─────────
-    // The Director is FINAL AUTHORITY. There is NO graceful fallback.
-    // If the model is unavailable, times out, or returns an invalid brief,
-    // the entire generation FAILS and the outer handler returns 500/429
-    // to the user. This is enforced because the brief is LAW for Stage 3
-    // and the EMOTION TRANSFORMATION LAW cannot be honored without it.
-    //
-    // The only condition under which Stage 2.5 is skipped is when Stage 1
-    // produced no blueprint at all (legacy fallback path) — there is
-    // nothing for the Director to interpret.
-    let directorBrief: DirectorBrief | null = null;
-    if (blueprint) {
-      const stage2_5Start = Date.now();
-      logger.info(
-        { model: QWEN_DIRECTOR_MODEL.name },
-        "MSGP Stage 2.5: starting Qwen 3.5 397B director layer (MANDATORY)",
-      );
-      const directorUserPrompt = buildDirectorPrompt({
-        topic,
-        genre: selectedGenre,
-        mood: selectedMood,
-        languageFlavor: effectiveFlavor,
-        artistInspiration: promptParams.artistInspiration,
-        styleReference: style,
-        notes,
-        blueprint,
-      });
-      // No try/catch here — let any error (timeout, 429, 5xx, network)
-      // propagate to the outer handler so the user gets a clear failure.
-      const directorResponse = await ai.chat.completions.create({
-        model: QWEN_DIRECTOR_MODEL.id,
-        messages: [
-          { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
-          { role: "user",   content: directorUserPrompt    },
-        ],
-        temperature: QWEN_DIRECTOR_MODEL.temperature,
-        top_p: 0.9,
-        // V2 brief is structurally larger (emotion_arc + vocal_execution
-        // are objects-per-section, plus constraints array); give the
-        // Director enough headroom to emit complete JSON.
-        max_tokens: 1500,
-        response_format: { type: "json_object" },
-      }, { signal: AbortSignal.timeout(30_000) });
-      const raw = directorResponse.choices[0]?.message?.content ?? "";
-      const parsed = parseJson(raw) as Record<string, unknown> | null;
-      // Defensive normalization: V2 spec uses "chorus" but our pipeline
-      // uses "hook". If the model slipped and emitted "chorus", remap it
-      // so downstream stays SectionKey-aligned.
-      const remapChorusToHook = (obj: unknown): unknown => {
-        if (!obj || typeof obj !== "object") return obj;
-        const o = obj as Record<string, unknown>;
-        if ("chorus" in o && !("hook" in o)) {
-          o.hook = o.chorus;
-          delete o.chorus;
-        }
-        return o;
-      };
-      if (parsed) {
-        remapChorusToHook(parsed.emotion_arc);
-        remapChorusToHook(parsed.vocal_execution);
-      }
-      const REQUIRED_SECTIONS: SectionKey[] = ["intro", "hook", "verse1", "verse2", "bridge", "outro"];
-      const isVocalEntry = (v: unknown): v is VocalExecutionEntry => {
-        if (!v || typeof v !== "object") return false;
-        const e = v as Record<string, unknown>;
-        return (
-          typeof e.delivery_style      === "string" && e.delivery_style.trim().length      > 0 &&
-          typeof e.repetition_behavior === "string" && e.repetition_behavior.trim().length > 0 &&
-          typeof e.crowd_interaction   === "string" && e.crowd_interaction.trim().length   > 0
-        );
-      };
-      // Normalize emotion_arc_type: accept loose variants like
-      // "Street Survival", "STRUGGLE", "pain arc" → snake_case enum.
-      const normalizeArcType = (v: unknown): EmotionArcType | undefined => {
-        if (typeof v !== "string") return undefined;
-        const s = v.toLowerCase().replace(/[\s-]+/g, "_").replace(/_arc$/, "");
-        if (s === "struggle" || s === "pain" || s === "street_survival") return s;
-        return undefined;
-      };
-      if (parsed && "emotion_arc_type" in parsed) {
-        const norm = normalizeArcType(parsed.emotion_arc_type);
-        if (norm) parsed.emotion_arc_type = norm;
-        else      delete parsed.emotion_arc_type;
-      }
-      const isValidBrief = (b: unknown): b is DirectorBrief => {
-        if (!b || typeof b !== "object") return false;
-        const o = b as Record<string, unknown>;
-        const arc = o.emotion_arc     as Record<string, unknown> | undefined;
-        const vox = o.vocal_execution as Record<string, unknown> | undefined;
-        if (!arc || typeof arc !== "object") return false;
-        if (!vox || typeof vox !== "object") return false;
-        // At minimum the 4 core sections must be present (bridge / outro
-        // can be tolerated as optional — songs without them still ship).
-        const CORE: SectionKey[] = ["intro", "hook", "verse1", "verse2"];
-        for (const k of CORE) {
-          if (typeof arc[k] !== "string" || (arc[k] as string).trim().length === 0) return false;
-          if (!isVocalEntry(vox[k])) return false;
-        }
-        // EMOTION TRANSFORMATION LAW — uniqueness gate. Reject briefs
-        // where two sections share the same emotional tone string
-        // (case-insensitive, whitespace-normalized). This stops the
-        // Director from passing flat or repeating arcs through.
-        const arcStrings = Object.values(arc)
-          .filter((v): v is string => typeof v === "string")
-          .map((v) => v.trim().toLowerCase().replace(/\s+/g, " "));
-        if (new Set(arcStrings).size !== arcStrings.length) return false;
-        if (!Array.isArray(o.constraints) || o.constraints.length === 0) return false;
-        if (!o.constraints.every((c) => typeof c === "string" && c.trim().length > 0)) return false;
-        if (typeof o.hook_plan     !== "string" || o.hook_plan.trim().length     === 0) return false;
-        if (typeof o.language_lock !== "string" || o.language_lock.trim().length === 0) return false;
-        return true;
-      };
-      // MANDATORY — invalid brief = hard failure. No fallback.
-      if (!isValidBrief(parsed)) {
-        logger.error(
-          {
-            model: QWEN_DIRECTOR_MODEL.name,
-            rawChars: raw.length,
-            parsedKeys: parsed ? Object.keys(parsed) : null,
-          },
-          "MSGP Stage 2.5 director brief INVALID — failing generation (no fallback)",
-        );
-        throw new Error("Director Layer (Qwen 3.5 397B) returned an invalid brief.");
-      }
-      directorBrief = parsed;
-      const arcKeys = Object.keys(directorBrief.emotion_arc);
-      const voxKeys = Object.keys(directorBrief.vocal_execution);
-      logger.info(
-        {
-          arcType:          directorBrief.emotion_arc_type ?? "unspecified",
-          arcSections:      arcKeys,
-          vocalSections:    voxKeys,
-          constraintsCount: directorBrief.constraints.length,
-          briefChars:       JSON.stringify(directorBrief).length,
-          missingSections:  REQUIRED_SECTIONS.filter((s) => !arcKeys.includes(s)),
-          elapsedMs:        Date.now() - stage2_5Start,
-        },
-        "MSGP Stage 2.5 director brief V2 accepted (LAW)",
-      );
-    }
-
     // ─── STAGE 3 — LYRICS WRITER (Qwen 122B) — compressed prompt + blueprint ─
     // If Stage 1 produced a blueprint, Stage 3 uses the compressed system
     // prompt + the merged blueprint (structure + emotion). If Stage 1 failed,
     // we fall back to the legacy monolithic prompt so the user still gets a song.
-    // When Stage 2.5 produced a director brief, it's prepended to the user
-    // prompt as priority guidance.
     const stage3SystemPrompt = blueprint ? LYRICS_COMPRESSED_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    logger.info({ model: QWEN_LYRICS_MODEL.name }, "Stage 3 lyrics (Qwen 122B): building prompt");
     const stage3UserPrompt   = blueprint
       ? buildCompressedLyricsPrompt({
           topic,
@@ -5347,7 +5001,6 @@ router.post("/generate-song", async (req, res) => {
           styleReference: style,
           diversityProfile,
           blueprint,
-          directorBrief,
           // V12 — pass arc archetype so the master core block can auto-suggest
           // hook identity (Chant for struggle/protest/street, Melody for
           // romantic, Call-and-Response for uplift, Mantra otherwise).
@@ -5533,9 +5186,10 @@ router.post("/generate-song", async (req, res) => {
     // kept only if it strictly reduces the issue count.
     if (blueprint) {
       const stage5Start = Date.now();
+      logger.info("Stage 5 hard validation (code): running lightValidate");
       const lightCheck = lightValidate(finalLyricsDraft, blueprint);
       if (!lightCheck.pass) {
-        logger.info({ issues: lightCheck.issues }, "MSGP Stage 5: running targeted light fix");
+        logger.info({ issues: lightCheck.issues }, "Stage 5 hard validation (code): issues found — running targeted light fix");
         const fixPrompt = buildLightFixPrompt(finalLyricsDraft, lightCheck.issues, blueprint);
         const fixResult = await callMsgpLyrics(QWEN_LYRICS_RETRY_MODEL, LYRICS_COMPRESSED_SYSTEM_PROMPT, fixPrompt);
         if (fixResult.draft) {
@@ -5985,7 +5639,6 @@ router.post("/generate-song", async (req, res) => {
       // emotionTags        = standalone Stage 2 output (audit trail / UI).
       ...(blueprint     ? { creativeBlueprint: blueprint } : {}),
       ...(emotionTags   ? { emotionTags } : {}),
-      ...(directorBrief ? { directorBrief } : {}),
     };
 
     logger.info(
@@ -6011,6 +5664,248 @@ router.post("/generate-song", async (req, res) => {
     }
   }
 });
+
+// ─── Quick Action Shared Pipeline (Stage 2 + Stage 3) ───────────────────────
+//
+// All four Quick Actions (Humanize, Harder, Catchier, Smart Rewrite) pass
+// through a shared post-Qwen pipeline:
+//   Stage 2 — LLaMA-3.2-3B  : detect if the emotion intent of any section
+//                               has shifted and surface updated tags
+//   Stage 3 — GPT-OSS-120B  : surgical micro-refinement using the updated
+//                               emotion tags before final delivery
+//
+// The helper below is called AFTER the Qwen rewrite produces a mergedDraft.
+
+const QA_EMOTION_CHECK_SYSTEM_PROMPT = `You are a lyric emotion analyst for Afrobeats and Dancehall music.
+
+You will be given actual song lyrics (section by section) and a genre + mood.
+Your ONLY job is to read the actual lines and determine what emotional state each section is expressing RIGHT NOW — based on the specific words, subject matter, energy, and rhythm used in the lyrics themselves.
+
+ANALYSIS PROCESS (do this for every section):
+1. Read every line in the section carefully
+2. Identify: What is the singer doing or feeling? What is the energy level? What is the subject matter?
+3. Pick ONE honest emotion label that describes what the lyrics actually say — not what you expect or what the song title implies
+4. Derive your label from the content, not from assumptions
+
+LABEL FORMAT:
+- A short verb-noun or adjective-noun phrase: 2–5 words
+- Must describe the REAL emotional action happening in that section
+- Derive it from the lyrics directly — do NOT reuse labels from other sections
+- Each section must have a DIFFERENT label unless two sections genuinely share identical emotion
+
+EMOTION CLASSIFICATION GUIDE (use as anchors, not as a list to copy from):
+- High-energy / collective / crowd-driven → something about chanting, rising, calling
+- Low-energy / introspective / lonely → something about silence, weight, memory
+- Aggressive / confrontational / defiant → something about pressure, push, resistance
+- Celebratory / triumphant / released → something about victory, freedom, breakthrough
+- Prayerful / humble / pleading → something about surrender, asking, faith
+- Street / hustler / ambitious → something about grind, hustle, proving
+
+CRITICAL RULES:
+- Do NOT copy labels from this prompt
+- Do NOT use vague generic labels like "Happy", "Sad", "Energetic", "Emotional"
+- Each label must be specific to WHAT IS IN THE LINES, not the genre
+- If emotionShifted is true, at least one section's emotion meaningfully differs from the supplied original mood
+
+Return ONLY a JSON object, no markdown, no explanation:
+{
+  "intro":   { "tag": "your derived label", "evidence": "the line or phrase that drove this label" },
+  "verse1":  { "tag": "your derived label", "evidence": "..." },
+  "hook":    { "tag": "your derived label", "evidence": "..." },
+  "verse2":  { "tag": "your derived label", "evidence": "..." },
+  "bridge":  { "tag": "your derived label", "evidence": "..." },
+  "outro":   { "tag": "your derived label", "evidence": "..." },
+  "emotionShifted": true or false
+}`;
+
+const QA_REFINEMENT_SYSTEM_PROMPT = `You are a lyric quality enforcer for Afrobeats and Dancehall music.
+
+You receive:
+1. Rewritten song lyrics (sections as arrays)
+2. Emotion tags per section — each tag was DERIVED from the actual lyrics content
+3. Song context: genre, mood, language flavor, keeper line
+
+YOUR PRIMARY JOB — EMOTION ALIGNMENT CHECK:
+For each section, read every line against its emotion tag.
+If a line's energy, subject matter, or vocabulary CONTRADICTS the emotion tag → rewrite that line.
+
+Examples of contradiction:
+- Tag = "Defiant Street Swagger" → line sounds soft or apologetic → REWRITE
+- Tag = "Quiet Lonely Weight" → line is loud and chant-ready → REWRITE
+- Tag = "Triumphant Crowd Call" → verse sounds hesitant or introspective → REWRITE
+- Tag = "Raw Hustle Hunger" → line sounds polished or romantic → REWRITE
+
+SECONDARY CHECK (fix only if genuinely broken):
+- Line sounds like English translated word-for-word into dialect → REWRITE in native dialect grammar
+- Line has too many syllables to sing naturally in one breath → TRIM
+- Line is a clear generic AI filler phrase with no specificity → REPLACE
+
+ABSOLUTE RULES:
+- Preserve line counts EXACTLY — never add or remove lines from a section
+- Do NOT change the keeper line unless its emotion directly contradicts the hook tag
+- Preserve dialect authenticity — refine WITHIN the dialect, not into English
+- If an entire section already matches its emotion tag correctly → return null for that section
+- Return ONLY the JSON object — no explanation, no markdown
+
+Output format (null for any section you did NOT change):
+{
+  "keeperLine": "..." or null,
+  "intro":  [...] or null,
+  "hook":   [...] or null,
+  "verse1": [...] or null,
+  "verse2": [...] or null,
+  "bridge": [...] or null,
+  "outro":  [...] or null
+}`;
+
+function formatDraftAsText(draft: Record<string, unknown>): string {
+  const fmt = (label: string, lines: unknown): string => {
+    if (!Array.isArray(lines) || lines.length === 0) return "";
+    return `[${label}]\n${(lines as string[]).join("\n")}`;
+  };
+  return [
+    fmt("Intro",   draft.intro),
+    fmt("Chorus",  draft.hook),
+    fmt("Verse 1", draft.verse1),
+    fmt("Verse 2", draft.verse2),
+    fmt("Bridge",  draft.bridge),
+    fmt("Outro",   draft.outro),
+  ].filter(Boolean).join("\n\n");
+}
+
+async function runQuickActionPipeline(params: {
+  ai: OpenAI;
+  mergedDraft: Record<string, unknown>;
+  mode: string;
+  genre: string;
+  mood: string;
+  languageFlavor: string;
+}): Promise<Record<string, unknown>> {
+  const { ai, mergedDraft, mode, genre, mood, languageFlavor } = params;
+  const lyricsText = formatDraftAsText(mergedDraft);
+
+  // ── Stage 2 — LLaMA-3.2-3B emotion intent check ──────────────────────────
+  // Temperature is deliberately LOW (0.2) — this is analysis, not creativity.
+  // The new prompt requires evidence-based derivation so the model can't
+  // just copy example labels from the system prompt.
+  type EmotionEntry = { tag: string; evidence: string };
+  let emotionTagMap: Record<string, EmotionEntry> = {};
+  try {
+    logger.info({ mode }, "Quick Action Stage 2: emotion check (LLaMA 3.2-3B)");
+    const emotionResponse = await ai.chat.completions.create({
+      model: EMOTION_TAG_MODEL.id,
+      messages: [
+        { role: "system", content: QA_EMOTION_CHECK_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            `Genre: ${genre}`,
+            `Mood: ${mood}`,
+            `Language: ${languageFlavor}`,
+            `Transformation applied: ${mode}`,
+            ``,
+            `LYRICS TO ANALYZE (read carefully before labeling):`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            lyricsText,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `Now analyze each section and return the JSON.`,
+          ].join("\n"),
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 600,
+    }, { signal: AbortSignal.timeout(15_000) });
+
+    const raw = emotionResponse.choices[0]?.message?.content ?? "";
+    const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      // Extract tag + evidence objects; ignore the emotionShifted boolean key
+      const sections = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+      for (const s of sections) {
+        const entry = parsed[s];
+        if (entry && typeof entry === "object" && "tag" in (entry as object)) {
+          emotionTagMap[s] = entry as EmotionEntry;
+        }
+      }
+      logger.info(
+        { emotionShifted: parsed.emotionShifted, tags: Object.fromEntries(Object.entries(emotionTagMap).map(([k, v]) => [k, v.tag])) },
+        "Quick Action Stage 2: emotion check complete"
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, "Quick Action Stage 2 emotion check failed — skipping, continuing to Stage 3");
+  }
+
+  // ── Stage 3 — GPT-OSS-120B emotion-alignment enforcement + refinement ─────
+  // Pass both tag AND evidence so GPT-OSS-120B knows which specific line drove
+  // each label — makes contradiction detection much more accurate.
+  const emotionTagsForPrompt = Object.entries(emotionTagMap)
+    .map(([section, { tag, evidence }]) => `  ${section}: "${tag}" (evidence: "${evidence}")`)
+    .join("\n");
+
+  try {
+    logger.info({ mode }, "Quick Action Stage 3: emotion enforcement + refinement (GPT-OSS-120B)");
+    const refineResponse = await ai.chat.completions.create({
+      model: MICRO_REFINEMENT_MODEL.id,
+      messages: [
+        { role: "system", content: QA_REFINEMENT_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            `Genre: ${genre}`,
+            `Mood: ${mood}`,
+            `Language: ${languageFlavor}`,
+            `Keeper Line: ${typeof mergedDraft.keeperLine === "string" ? `"${mergedDraft.keeperLine}"` : "none"}`,
+            ``,
+            `EMOTION TAGS (analyzed from the actual lyrics — each tag is evidence-backed):`,
+            emotionTagsForPrompt || "  (no emotion tags available — apply secondary checks only)",
+            ``,
+            `REWRITTEN LYRICS:`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            lyricsText,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `For each section: check EVERY line against its emotion tag. Rewrite lines that contradict the tag. Return null for sections with no issues.`,
+          ].join("\n"),
+        },
+      ],
+      temperature: MICRO_REFINEMENT_MODEL.temperature,
+      max_tokens: 2500,
+    }, { signal: AbortSignal.timeout(28_000) });
+
+    const raw = refineResponse.choices[0]?.message?.content ?? "";
+    const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      logger.warn({ raw: raw.slice(0, 200) }, "Quick Action Stage 3: unreadable output — returning Stage 1 draft");
+      return mergedDraft;
+    }
+
+    const refined = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    const finalDraft: Record<string, unknown> = {
+      ...mergedDraft,
+      ...(typeof refined.keeperLine === "string" && refined.keeperLine.trim()
+        ? { keeperLine: refined.keeperLine }
+        : {}),
+      ...(Array.isArray(refined.intro)  && refined.intro.length  > 0 ? { intro:  refined.intro  } : {}),
+      ...(Array.isArray(refined.hook)   && refined.hook.length   > 0 ? { hook:   refined.hook   } : {}),
+      ...(Array.isArray(refined.verse1) && refined.verse1.length > 0 ? { verse1: refined.verse1 } : {}),
+      ...(Array.isArray(refined.verse2) && refined.verse2.length > 0 ? { verse2: refined.verse2 } : {}),
+      ...(Array.isArray(refined.bridge) && refined.bridge.length > 0 ? { bridge: refined.bridge } : {}),
+      ...(Array.isArray(refined.outro)  && refined.outro.length  > 0 ? { outro:  refined.outro  } : {}),
+    };
+
+    logger.info({ mode }, "Quick Action Stage 3: micro-refinement complete");
+    return finalDraft;
+  } catch (err) {
+    logger.warn({ err }, "Quick Action Stage 3 refinement failed — returning Stage 1 draft");
+    return mergedDraft;
+  }
+}
 
 // ─── Make It Harder Route ────────────────────────────────────────────────────
 
@@ -6257,8 +6152,16 @@ router.post("/harden-lyrics", requireAuth, attachPlanFromDb, requireFeature("can
       ...(Array.isArray(hardened.outro)  && hardened.outro.length  > 0 && { outro:  hardened.outro  }),
     };
 
-    logger.info("Make It Harder rewrite completed successfully");
-    res.json({ draft: mergedDraft });
+    const finalDraft = await runQuickActionPipeline({
+      ai,
+      mergedDraft,
+      mode: "harder",
+      genre: genre ?? "Afrobeats",
+      mood: mood ?? "Uplifting",
+      languageFlavor: languageFlavor ?? "Global English",
+    });
+    logger.info("Make It Harder pipeline completed successfully");
+    res.json({ draft: finalDraft });
   } catch (err) {
     logger.error({ err }, "Make It Harder rewriter error");
     const status = (err as { status?: number }).status;
@@ -6529,8 +6432,16 @@ router.post("/catchier-lyrics", requireAuth, attachPlanFromDb, requireFeature("c
       ...(Array.isArray(catchier.outro)  && catchier.outro.length  > 0 && { outro:  catchier.outro  }),
     };
 
-    logger.info("Make It Catchier rewrite completed successfully");
-    res.json({ draft: mergedDraft });
+    const finalDraft = await runQuickActionPipeline({
+      ai,
+      mergedDraft,
+      mode: "catchier",
+      genre: genre ?? "Afrobeats",
+      mood: mood ?? "Uplifting",
+      languageFlavor: languageFlavor ?? "Global English",
+    });
+    logger.info("Make It Catchier pipeline completed successfully");
+    res.json({ draft: finalDraft });
   } catch (err) {
     logger.error({ err }, "Make It Catchier rewriter error");
     const status = (err as { status?: number }).status;
@@ -6773,8 +6684,16 @@ router.post("/rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeature("ca
       ...(Array.isArray(rewritten.outro)  && rewritten.outro.length  > 0 && { outro:  rewritten.outro  }),
     };
 
-    logger.info("Lyrics humanization completed successfully");
-    res.json({ draft: mergedDraft });
+    const finalDraft = await runQuickActionPipeline({
+      ai,
+      mergedDraft,
+      mode: "humanize",
+      genre: genre ?? "Afrobeats",
+      mood: mood ?? "Uplifting",
+      languageFlavor: languageFlavor ?? "Global English",
+    });
+    logger.info("Lyrics humanization pipeline completed successfully");
+    res.json({ draft: finalDraft });
   } catch (err) {
     logger.error({ err }, "Lyrics rewriter error");
     const status = (err as { status?: number }).status;
@@ -6946,8 +6865,16 @@ router.post("/smart-rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeatu
       ...(Array.isArray(edited.outro)  && edited.outro.length  > 0 ? { outro:  edited.outro  } : {}),
     };
 
-    logger.info("Smart rewrite completed successfully");
-    res.json({ draft: mergedDraft });
+    const finalDraft = await runQuickActionPipeline({
+      ai,
+      mergedDraft,
+      mode: "smart-rewrite",
+      genre: genre ?? "Afrobeats",
+      mood: mood ?? "Uplifting",
+      languageFlavor: languageFlavor ?? "Global English",
+    });
+    logger.info("Smart rewrite pipeline completed successfully");
+    res.json({ draft: finalDraft });
   } catch (err) {
     logger.error({ err }, "Smart rewrite error");
     const status = (err as { status?: number }).status;

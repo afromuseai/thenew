@@ -19,7 +19,7 @@ import {
   formatDraftForClipboard,
   type SongDraft,
 } from "@/lib/songGenerator";
-import { inferLyricsEmotions, type EmotionTag } from "@/lib/lyricsEmotion";
+import { inferLyricsEmotions } from "@/lib/lyricsEmotion";
 import { useAuth } from "@/context/AuthContext";
 import { usePlan, PLAN_LIMITS, type Plan } from "@/context/PlanContext";
 import { useProjectLibrary, extractResumeState } from "@/context/ProjectLibraryContext";
@@ -574,29 +574,34 @@ export default function Studio() {
 
   const LYRICS_SECTIONS = draft ? (() => {
     const bridgeLabel = draft.diversityReport?.dnaMode === "CHAOS MODE" ? "Break" : "Bridge";
-    const emotions = inferLyricsEmotions(
-      {
-        intro: draft.intro,
-        hook: draft.hook,
-        verse1: draft.verse1,
-        verse2: draft.verse2,
-        bridge: draft.bridge,
-        outro: draft.outro,
-      },
-      mood,
-    );
-    const sections: { id: string; label: string; emotion?: EmotionTag; lines: string[] }[] = [];
-    const push = (id: string, label: string, emotion: EmotionTag | undefined, lines?: string[]) => {
-      if (lines?.length) sections.push({ id, label, emotion, lines });
+
+    // Prefer server-side AI emotion tags (Stage 2 LLaMA output) when available —
+    // these are rich, content-derived labels like "Hollow Heart Drift" or
+    // "Bruised-Knuckle Confession". Fall back to the client-side keyword
+    // inference only when the server tags are absent (e.g. older drafts).
+    const serverTags = draft.emotionTags;
+    const clientEmotions = (!serverTags || Object.keys(serverTags).length === 0)
+      ? inferLyricsEmotions(
+          { intro: draft.intro, hook: draft.hook, verse1: draft.verse1, verse2: draft.verse2, bridge: draft.bridge, outro: draft.outro },
+          mood,
+        )
+      : null;
+
+    const getEmotion = (role: "intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro"): string | undefined =>
+      serverTags?.[role] ?? clientEmotions?.[role] ?? undefined;
+
+    const sections: { id: string; label: string; emotion?: string; lines: string[] }[] = [];
+    const push = (id: string, label: string, role: "intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro", lines?: string[]) => {
+      if (lines?.length) sections.push({ id, label, emotion: getEmotion(role), lines });
     };
-    push("intro", "Intro", emotions.intro, draft.intro);
-    push("hook-1", "Chorus", emotions.hook, draft.hook);
-    push("verse1", "Verse 1", emotions.verse1, draft.verse1);
-    push("hook-2", "Chorus", emotions.hook, draft.hook);
-    push("verse2", "Verse 2", emotions.verse2, draft.verse2);
-    push("hook-3", "Chorus", emotions.hook, draft.hook);
-    push("bridge", bridgeLabel, emotions.bridge, draft.bridge);
-    push("outro", "Outro", emotions.outro, draft.outro);
+    push("intro",  "Intro",   "intro",  draft.intro);
+    push("hook-1", "Chorus",  "hook",   draft.hook);
+    push("verse1", "Verse 1", "verse1", draft.verse1);
+    push("hook-2", "Chorus",  "hook",   draft.hook);
+    push("verse2", "Verse 2", "verse2", draft.verse2);
+    push("hook-3", "Chorus",  "hook",   draft.hook);
+    push("bridge", bridgeLabel, "bridge", draft.bridge);
+    push("outro",  "Outro",   "outro",  draft.outro);
     return sections;
   })() : [];
 

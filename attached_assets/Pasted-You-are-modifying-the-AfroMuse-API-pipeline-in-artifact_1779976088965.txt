@@ -1,0 +1,210 @@
+You are modifying the AfroMuse API pipeline in:
+
+artifacts/api-server/src/routes/generate-song.ts
+
+Your task is to RESTRUCTURE the multi-model pipeline for correctness, speed, and output quality.
+
+Do NOT partially apply changes. Apply ALL changes consistently across constants, call sites, prompts, and logs.
+
+---
+
+## 🎯 OBJECTIVE
+
+Fix:
+
+* Repetitive emotion tags
+* Weak dialect authenticity
+* Broken line counts
+* Unnecessary latency
+
+---
+
+## 🔥 REQUIRED ARCHITECTURE (FINAL)
+
+Stage 1 — Blueprint
+Model: llama-4-maverick
+
+Stage 2 — Emotion Tags
+Model: llama-3.2-3b-instruct
+
+Stage 3 — Lyrics Writer
+Model: qwen/qwen3.5-122b-a10b
+
+Stage 4 — Micro Refinement (STRICT, OPTIONAL)
+Model: openai/gpt-oss-120b
+
+Stage 5 — HARD VALIDATION (CODE ONLY, NOT MODEL)
+
+Stage 6 — Language Localization (ONLY if custom language is set)
+Model: llama-3.1-70b-instruct
+
+Post — Production Blueprint
+Model: llama-4-maverick
+
+---
+
+## ❌ REMOVE COMPLETELY
+
+1. DELETE Stage 2.5 (Director Brief)
+
+   * Remove all references to qwen3.5-397b
+   * Remove its prompt, call, logs, and dependencies
+   * Ensure no variable still references "director" or similar
+
+2. REMOVE any fallback logic that re-invokes 397B
+
+---
+
+## 🔁 STAGE 2 FIX (CRITICAL)
+
+REPLACE Emotion model:
+
+FROM:
+GPT-OSS-120B
+
+TO:
+llama-3.2-3b-instruct
+
+---
+
+### REWRITE Emotion Prompt:
+
+Emotion engine must:
+
+* Generate EXACTLY 6 tags
+* Be UNIQUE (no duplicates or near duplicates)
+* Be NON-GENERIC
+* Follow emotional progression
+
+USE THIS SYSTEM PROMPT:
+
+"You are the Emotion Authority Engine.
+
+Generate 6 UNIQUE emotion tags for:
+intro, chorus, verse1, chorus2, verse2, bridge
+
+STRICT RULES:
+
+* Every tag must be different
+
+* DO NOT use generic labels like:
+  'Anthemic', 'Energetic', 'Emotional', 'Calm'
+
+* Use expressive phrases like:
+  'Quiet Pain Float', 'Street Choir Rise', 'Pressure Burst',
+  'Prayer Chant Wave', 'Broken Hope Echo', 'Victory Cry Release'
+
+* Tags MUST follow progression:
+  intro → low tension
+  chorus → expressive
+  verse2 → deeper or chaotic
+  bridge → reflective or spiritual shift
+
+OUTPUT JSON ONLY:
+{
+"intro": "...",
+"chorus": "...",
+"verse1": "...",
+"chorus2": "...",
+"verse2": "...",
+"bridge": "..."
+}"
+
+---
+
+## 🧠 STAGE 3 FIX (LYRICS CONTROL)
+
+UPDATE Qwen lyrics system prompt:
+
+ADD STRICT RULES:
+
+1. Verse line counts MUST be EXACTLY one of:
+
+   * 8 lines
+   * 12 lines
+   * 16 lines
+
+2. Intro MUST be 2 or 4 lines ONLY
+
+3. Chorus MUST be 4–8 lines
+
+4. DO NOT exceed or undercut line counts
+
+5. Enforce dialect consistency:
+
+   * Afrobeats → Nigerian Pidgin
+   * Dancehall → Jamaican Patois
+   * DO NOT default to clean English
+
+6. Emotion tags MUST influence tone of each section
+
+---
+
+## 🔧 STAGE 5 (CRITICAL — CODE VALIDATION)
+
+IMPLEMENT HARD VALIDATION FUNCTION:
+
+validateStructure(draft):
+
+* Check intro line count (2 or 4)
+* Check each verse is 8 / 12 / 16
+* Check chorus between 4–8
+* Reject invalid drafts BEFORE returning
+
+If invalid:
+
+* Retry Qwen ONCE with correction flag
+* If still invalid → clamp lines (trim or pad safely)
+
+DO NOT rely on model for structure enforcement
+
+---
+
+## ⚙️ STAGE 4 (MICRO REFINEMENT)
+
+KEEP GPT-OSS-120B but enforce:
+
+* Runs ONLY if mechanical issues detected
+* Must NOT rewrite creatively
+* Must preserve slang/dialect
+
+KEEP existing strict acceptance gate
+
+---
+
+## 🌍 STAGE 6 (LANGUAGE)
+
+Ensure:
+
+* Only triggers if user sets custom language
+* Does NOT translate blindly
+* Must localize naturally
+
+---
+
+## 📊 LOGGING (IMPORTANT)
+
+Update logs to reflect new pipeline:
+
+* REMOVE all 397B logs
+* Add:
+  "Stage 2 emotion engine (LLaMA 3.2)"
+  "Stage 3 lyrics (Qwen 122B)"
+  "Stage 5 hard validation (code)"
+
+---
+
+## ✅ FINAL CHECK
+
+After implementation:
+
+* No reference to qwen3.5-397b exists
+* Emotion tags are unique
+* Line counts are always correct
+* Pipeline latency reduced
+* Lyrics maintain dialect authenticity
+
+---
+
+DO NOT summarize.
+Apply all changes and confirm with updated pipeline logs.

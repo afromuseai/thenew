@@ -144,6 +144,12 @@ export interface SongDraft {
       hookPersonality?: string;
     };
   };
+  // MSGP Stage 2 — AI-analyzed per-section emotion tags (e.g. "Hollow Heart Drift").
+  // Returned by the server after every /api/generate-song call.
+  // These are used by the Studio in preference over the client-side keyword inference.
+  emotionTags?: Partial<Record<"intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro", string>>;
+  // MSGP full creative blueprint (structure + emotion + flow contracts).
+  creativeBlueprint?: Record<string, unknown>;
 }
 
 function pick<T>(arr: T[], seed: number, offset = 0): T {

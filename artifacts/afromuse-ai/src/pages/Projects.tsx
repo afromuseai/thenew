@@ -464,26 +464,22 @@ function ProjectDrawer({
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
           {draft ? (() => {
-            const emotions = inferLyricsEmotions(
-              {
-                intro: draft.intro,
-                hook: draft.hook,
-                verse1: draft.verse1,
-                verse2: draft.verse2,
-                bridge: draft.bridge,
-                outro: draft.outro,
-              },
-              mood,
-            );
+            // Prefer server-side AI emotion tags; fall back to client-side keyword inference
+            const serverTags = draft.emotionTags;
+            const clientEmotions = (!serverTags || Object.keys(serverTags).length === 0)
+              ? inferLyricsEmotions({ intro: draft.intro, hook: draft.hook, verse1: draft.verse1, verse2: draft.verse2, bridge: draft.bridge, outro: draft.outro }, mood)
+              : null;
+            const em = (role: "intro" | "hook" | "verse1" | "verse2" | "bridge" | "outro"): string | undefined =>
+              serverTags?.[role] ?? clientEmotions?.[role] ?? undefined;
             return (
             <div className="p-6 space-y-8">
-              <DrawerSection label={`⚡ Hook / Chorus${emotions.hook ? ` — ${emotions.hook}` : ""}`} isHook lines={draft.hook} />
-              <DrawerSection label={`Verse 1${emotions.verse1 ? ` — ${emotions.verse1}` : ""}`} lines={draft.verse1} />
-              <DrawerSection label={`⚡ Hook / Chorus${emotions.hook ? ` — ${emotions.hook}` : ""}`} isHook lines={draft.hook} repeat />
-              <DrawerSection label={`Verse 2${emotions.verse2 ? ` — ${emotions.verse2}` : ""}`} lines={draft.verse2} />
+              <DrawerSection label={`⚡ Hook / Chorus${em("hook") ? ` — ${em("hook")}` : ""}`} isHook lines={draft.hook} />
+              <DrawerSection label={`Verse 1${em("verse1") ? ` — ${em("verse1")}` : ""}`} lines={draft.verse1} />
+              <DrawerSection label={`⚡ Hook / Chorus${em("hook") ? ` — ${em("hook")}` : ""}`} isHook lines={draft.hook} repeat />
+              <DrawerSection label={`Verse 2${em("verse2") ? ` — ${em("verse2")}` : ""}`} lines={draft.verse2} />
 
               <div>
-                <SectionLabel label={`Bridge${emotions.bridge ? ` — ${emotions.bridge}` : ""}`} className="bg-violet-500/12 text-violet-400 border-violet-500/20" />
+                <SectionLabel label={`Bridge${em("bridge") ? ` — ${em("bridge")}` : ""}`} className="bg-violet-500/12 text-violet-400 border-violet-500/20" />
                 <div className="rounded-xl bg-violet-500/5 border border-violet-500/10 p-5 mt-3">
                   <p className="text-sm text-white/70 leading-8 italic text-center">
                     {draft.bridge.map((line, i) => (
