@@ -1,0 +1,275 @@
+You are a senior full-stack engineer building a production-ready AI music generation system.
+
+Your task is to integrate an external AI Music Generation API into an existing app. The system must support generating instrumental beats and full songs, handling async jobs, and returning playable audio to the frontend.
+
+DO NOT use placeholder logic. Build real, working architecture with clean separation of concerns.
+
+---
+
+## 🧠 SYSTEM OVERVIEW
+
+We are building a feature called:
+
+👉 “Generate Instrumental / Song”
+
+User inputs:
+
+* genre
+* mood
+* bpm (optional)
+* key (optional)
+* energy
+* sound reference (optional)
+* production style (optional)
+* lyrics (optional, structured into sections)
+
+System must:
+
+1. Send request to AI Music API
+2. Receive a task_id
+3. Track job status (polling OR callback)
+4. Return final audio URL
+5. Display playable audio in UI
+
+---
+
+## ⚙️ BACKEND REQUIREMENTS (Node.js / TypeScript)
+
+### 1. Create Service Layer
+
+Create a service:
+
+`services/musicGeneration.ts`
+
+Responsibilities:
+
+* Build request body from user input
+* Handle two modes:
+
+  * Instrumental (no lyrics)
+  * Full song (with lyrics)
+* Send POST request to start generation
+* Extract task_id
+* Poll for completion
+* Return final result
+
+---
+
+### 2. Polling System
+
+Implement a robust polling loop:
+
+* Retry every 5–6 seconds
+* Max attempts: 40
+* Stop when:
+
+  * status = completed
+  * OR audio_url exists
+* Handle failure states
+
+Return:
+
+```ts
+{
+  audioUrl: string
+  title?: string
+  coverArt?: string
+}
+```
+
+---
+
+### 3. Optional Callback System (Advanced)
+
+Add support for webhook callback:
+
+* Endpoint: `/api/music/callback`
+* Store results in memory (Map or store)
+* If callback result exists → stop polling early
+
+---
+
+### 4. Controller Layer
+
+Create route:
+
+`POST /api/music/generate`
+
+Flow:
+
+1. Validate input
+2. Call service
+3. Return response:
+
+```json
+{
+  success: true,
+  data: {
+    audioUrl,
+    title,
+    coverArt
+  }
+}
+```
+
+---
+
+### 5. Error Handling
+
+* Handle API failures gracefully
+* Timeout handling
+* Return clean errors:
+
+```json
+{
+  success: false,
+  error: "Generation failed"
+}
+```
+
+---
+
+## 🎛️ PROMPT INTELLIGENCE (VERY IMPORTANT)
+
+You must build a function:
+
+`buildMusicPrompt(payload)`
+
+This converts user input into a NATURAL LANGUAGE production brief.
+
+Rules:
+
+* Must sound like a music producer
+* Include:
+
+  * groove style
+  * emotional tone
+  * drum character
+  * bass weight
+  * mix feel
+* Output a clean descriptive paragraph
+
+Also build:
+
+* `styleString` (comma-separated tags)
+
+---
+
+## 🎨 FRONTEND (React)
+
+### 1. Create UI Component
+
+`GenerateMusic.tsx`
+
+Include:
+
+#### Inputs:
+
+* Genre dropdown
+* Mood dropdown
+* BPM input
+* Key input
+* Energy selector
+* Text input (sound reference)
+* Toggle:
+
+  * Instrumental
+  * Full song (reveals lyrics editor)
+
+#### Lyrics Editor:
+
+* Sections:
+
+  * Verse 1
+  * Chorus
+  * Verse 2
+  * Bridge
+
+---
+
+### 2. Generate Button
+
+On click:
+
+* Call backend `/api/music/generate`
+* Show loading state:
+
+  * “Generating your track…”
+
+---
+
+### 3. Result Display
+
+After success:
+
+Show:
+
+* Audio player (HTML5 audio)
+* Title
+* Cover art (if exists)
+
+---
+
+### 4. Loading UX
+
+While polling:
+
+* Show animated progress
+* Disable inputs
+* Display status messages:
+
+  * “Composing melody…”
+  * “Building drums…”
+
+---
+
+## 🔌 DATA FLOW
+
+Frontend → Backend → AI API → Polling/Callback → Backend → Frontend
+
+---
+
+## 🔐 ENV VARIABLES
+
+Use environment variables:
+
+* API key
+* model name
+* optional callback base URL
+
+Do NOT hardcode secrets.
+
+---
+
+## 🧪 TESTING
+
+* Test instrumental generation
+* Test lyrics generation
+* Test failure case
+* Test timeout case
+
+---
+
+## 🧱 CODE QUALITY
+
+* Use async/await
+* Modular structure
+* Clean TypeScript types
+* No duplicated logic
+
+---
+
+## 🎯 FINAL GOAL
+
+A user can:
+
+1. Enter music parameters
+2. Click Generate
+3. Wait
+4. Receive a fully playable audio track
+
+---
+
+Build this as a complete, working feature — backend + frontend — wired together.
+
+Do not skip steps. Do not simplify architecture.

@@ -1,0 +1,314 @@
+You are upgrading the AfroMuse music generation system into a fully production-ready feature. Do not partially implement anything. Build and wire everything end-to-end.
+
+---
+
+1. GENERATE PAGE — FULL UI EXPANSION
+
+---
+
+Upgrade the /generate page to include ALL required AI Music API inputs:
+
+CORE FIELDS:
+
+* Title (text input, max 120 chars)
+* Style (textarea, max 1000 chars, show live character counter)
+* Genre (dropdown)
+* Mood (dropdown)
+* BPM (number input)
+* Key (dropdown)
+* Energy (Low / Mid / High)
+* Instrumental vs Full Song toggle
+
+LYRICS MODE (when Full Song selected):
+
+* Structured lyrics editor:
+  Intro
+ Chorus
+  Verse 1
+  Chorus
+  Verse 2
+  Bridge/hook
+  Outro
+
+Each section should be a textarea and compiled before sending.
+
+ADVANCED CONTROLS:
+
+* Style Weight (0–1 slider)
+* Weirdness Constraint (0–1 slider)
+* Audio Weight (0–1 slider)
+* Negative Tags (comma input)
+* Gender (male/female)
+
+---
+
+2. BEAT DNA + ARTIST DNA — REAL AUDIO IMPACT
+
+---
+
+Ensure these controls are NOT cosmetic. They must affect generation:
+
+Beat DNA:
+
+* Bounce Style
+* Melody Density
+* Drum Character
+* Hook Lift
+
+Artist DNA:
+
+* Vocal tone shaping
+* Emotional delivery
+* Texture direction
+
+These must:
+
+* Feed into the prompt builder
+* Modify BOTH:
+  → style string
+  → description prompt
+
+---
+
+3. AUDIO STACK (RIGHT SIDEBAR)
+
+---
+
+Currently UI-only → MAKE IT REAL.
+
+Wire these to affect generation:
+
+* Reverb → affects "space", "depth"
+* EQ → tonal brightness/darkness
+* Compression → punch/dynamics
+* Stereo width → spatial language
+
+These must inject into:
+→ prompt builder
+→ style string
+
+---
+
+4. “USE STUDIO LYRICS” FIX
+
+---
+
+When user clicks "Use Studio Lyrics":
+
+AUTO-FILL:
+
+* Title → Title field
+* Lyrics → Lyrics sections
+* Production Notes → Style field
+* BPM → BPM field
+* Key → Key field
+
+IMPORTANT:
+
+* DO NOT clear existing audio settings
+* Merge intelligently, do not overwrite unless empty
+
+---
+
+5. FIX DATA LOSS BUG
+
+---
+
+Currently:
+Switching to Lyrics Studio wipes Audio Studio inputs.
+
+Fix:
+
+* Maintain separate state objects:
+  audioState
+  lyricsState
+
+Switching modes must NOT delete data.
+
+---
+
+6. MULTI-TRACK SUPPORT (IMPORTANT)
+
+---
+
+Backend already returns multiple tracks.
+
+Update frontend:
+
+* Display ALL returned tracks
+* Show:
+  Track A, Track B
+* Each track:
+
+  * Audio player
+  * Cover art
+  * Title
+
+---
+
+7. DOWNLOAD SYSTEM (MP3 + WAV)
+
+---
+
+Add download buttons:
+
+* Download MP3
+* Download WAV (if available)
+
+Implementation:
+
+* Use direct URL if provided
+* If only stream URL:
+  → fetch → blob → trigger download
+
+---
+
+8. AUTO SAVE GENERATED SONGS
+
+---
+
+Create storage system:
+
+* Save after generation:
+  userId
+  title
+  audioUrl
+  coverArt
+  createdAt
+
+Create:
+
+* /library page
+* Show user's generated tracks
+* Add play + download buttons
+
+---
+
+9. MODEL SELECTOR FIX
+
+---
+
+Replace visible text:
+
+❌ "AI MUSIC API" / "aimusic.org"
+
+✅ Replace with:
+
+* "Model"
+
+Show:
+
+* chirp-v4-5
+* chirp-v5
+* etc.
+
+---
+
+10. LYRICS QUALITY IMPROVEMENTS
+
+---
+
+Improve generation:
+
+* ALWAYS include Intro section
+
+* Enforce structure:
+  Intro → Verse → Chorus → Verse → Bridge → Chorus → Outro
+
+* Dialect enforcement:
+  Strengthen Afro-centric language
+  Ensure consistency across verses
+
+---
+
+11. USAGE LIMIT SYSTEM (CRITICAL)
+
+---
+
+Implement strict limits:
+
+FREE:
+
+* 1 audio generation lifetime / lyrics unlimited without advance songwriting 
+
+CREATOR PRO:
+
+* 50 audio per month/ lyrics unlimited with advanced songwriting 
+
+ARTIST:
+
+* 100 per month / lyrics unlimited with advanced songwriting 
+
+Add:
+
+* usage table (userId, count, resetDate)
+
+Block generation when limit reached.
+
+---
+
+12. ADMIN PANEL UPDATES
+
+---
+
+Update admin dashboard:
+
+* Show user tier
+* Show usage count
+* Allow changing tier
+* Display:
+  Free / Creator Pro / Artist
+
+---
+
+13. CALLBACK + POLLING VALIDATION
+
+---
+
+Ensure:
+
+* Callback endpoint updates task store
+* Polling stops when callback fires
+* No duplicate completion
+
+---
+
+ADDITIONAL
+Free users:
+low priority queue
+lower quality model
+Paid users:
+faster generation
+better model (e.g. chirp-v5)
+
+
+
+14. FINAL TESTING (MANDATORY)
+
+---
+
+Agent must test:
+
+* Generate Instrumental → success
+* Generate Full Song → success
+* Multi-track rendering works
+* Downloads work
+* Library saves tracks
+* Limits enforced correctly
+* No UI reset bugs
+* Audio Stack changes affect output
+
+---
+
+## OUTPUT REQUIREMENT
+
+Do not just write code.
+
+* Modify existing files
+* Wire frontend + backend fully
+* Run full test
+* Confirm working system
+
+---
+
+## END
