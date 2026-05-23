@@ -134,7 +134,6 @@ export function Navbar() {
 
   const authLinks = [
     { name: "Studio", href: "/studio" },
-    { name: "Generate", href: "/generate" },
     { name: "Library", href: "/library" },
     { name: "Projects", href: "/projects" },
     ...(user?.role === "admin" ? [{ name: "Admin", href: "/admin" }] : []),

@@ -15,7 +15,8 @@ import { getEmotionProfile } from "../engine/emotion";
 import { getSoundSignature } from "../engine/soundSignature";
 
 import { buildAfroMusePrompt } from "../engine/brain/afromuse-brain";
-import { createEngineJob, getEngineJob, advanceJob, failJob } from "../engine/jobStore.js";
+import { createEngineJob, getEngineJob, advanceJob, failJob, markJobPersisted } from "../engine/jobStore.js";
+import { db, generatedTracksTable } from "@workspace/db";
 import { run as runInstrumental, type InstrumentalPayload } from "../engine/providers/instrumental.js";
 import { runVocalDemo, runLeadVocal, type VocalDemoPayload, type LeadVocalPayload } from "../engine/providers/vocal.js";
 import { run as runMastering, type MasteringPayload } from "../engine/providers/mastering.js";
@@ -63,63 +64,20 @@ function dispatch(
 
 router.post("/generate-instrumental-preview", (req, res) => {
   const payload = req.body as InstrumentalPayload;
-  const job = createEngineJob("instrumental", "instrumental");
-  const userId = (req as any).user?.id || "anonymous";
-  const emotion = getEmotionProfile(userId, payload.mood);
-  const prompt = `
-  ${genre}, ${bpm} BPM
-
-  Emotion:
-  Intensity: ${emotion.intensity}
-  Tension: ${emotion.tension}
-  Warmth: ${emotion.warmth}
-  Energy Curve: ${emotion.energyCurve}
-
-  Musical Direction:
-  ${emotion.harmonicMood}
-
-  Beat DNA:
-  ${JSON.stringify(payload.beatDNA || {})}
-
-  AfroMuse signature production, industry quality
-  `;
-
-  // ─── AfroMuse Intelligence Layer ─────────────────────
-  const memory = getUserStyleProfile(userId);
-  const emotion = getEmotionProfile(payload.mood, payload.genre);
-  const signature = getSoundSignature(userId);
-
-  // Merge smart context
-  const afroContext = {
-    genre: payload.genre || memory.topGenre || "Afrobeats",
-    mood: payload.mood || memory.topMood || "chill",
-    bpm: payload.bpm || memory.avgBpm || 110,
-    beatDNA: payload,
-    emotion,
-    signature,
-  };
-
-  const finalPrompt = buildAfroMusePrompt(afroContext);
+  const userId = (req as any).user?.id;
+  const job = createEngineJob("instrumental", "instrumental", {
+    userId: typeof userId === "number" ? userId : undefined,
+    title: payload.title,
+    style: payload.style,
+    genre: payload.genre,
+    mood: payload.mood,
+  });
 
   dispatch(
     job.jobId,
-    () =>
-  const userId = (req as any).user?.id || "guest";
-
-  const prompt = buildAfroMusePrompt({
-    userId,
-    genre: payload.genre,
-    mood: payload.mood,
-    bpm: payload.bpm,
-    key: payload.key,
-    beatDNA: {
-      bounceStyle: payload.bounceStyle,
-      melodyDensity: payload.melodyDensity,
-      drumCharacter: payload.drumCharacter,
-      hookLift: payload.hookLift,
-    },
-    productionStyle: payload.buildMode,
-  });
+    () => runInstrumental(job.jobId, payload),
+    "Instrumental generation failed",
+  );
 
   const secs = payload.lyricsSections ?? {};
   logger.info({
@@ -162,7 +120,14 @@ router.post("/generate-lead-vocals", (req, res) => {
     return;
   }
 
-  const job = createEngineJob("lead-vocal", "vocal");
+  const userId = (req as any).user?.id;
+  const job = createEngineJob("lead-vocal", "vocal", {
+    userId: typeof userId === "number" ? userId : undefined,
+    title: payload.title,
+    style: payload.style,
+    genre: payload.genre,
+    mood: payload.songMood,
+  });
 
   dispatch(job.jobId, () => runLeadVocal(job.jobId, payload), "Lead vocal generation failed");
 
@@ -232,6 +197,35 @@ router.get("/audio-job/:jobId", (req, res) => {
   // Completed — serve normalized response mapped to the legacy UI contract
   const r = job.response!;
   const bp = r.blueprintData ?? {};
+
+  // ── Library Persistence ─────────────────────────────────────────────────
+  // First successful poll for an authenticated user inserts the track into
+  // generated_tracks so it shows up in /api/music/library. Idempotent — the
+  // `persisted` flag on the job prevents duplicate inserts on repeat polls.
+  if (
+    !job.persisted &&
+    typeof r.audioUrl === "string" &&
+    r.audioUrl.length > 0 &&
+    job.meta?.userId
+  ) {
+    const meta = job.meta;
+    markJobPersisted(job.jobId);
+    const fallbackTitle =
+      meta.title?.trim() ||
+      (meta.genre ? `${meta.genre} ${job.type === "lead-vocal" ? "Vocal" : "Track"}` : "Generated Track");
+    db.insert(generatedTracksTable)
+      .values({
+        userId: meta.userId,
+        title: fallbackTitle,
+        audioUrl: r.audioUrl,
+        coverArt: bp.coverArtUrl ?? null,
+        genre: meta.genre ?? bp.genre ?? null,
+        mood: meta.mood ?? bp.mood ?? null,
+        style: meta.style ?? null,
+        jobId: job.jobId,
+      })
+      .catch((err) => logger.warn({ err, jobId: job.jobId }, "Library persist failed"));
+  }
 
   // Derive live/fallback flags from the normalized response.
   // Any non-empty audioUrl (data: URL from ElevenLabs, or a public path from

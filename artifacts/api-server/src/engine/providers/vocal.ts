@@ -16,6 +16,7 @@ import OpenAI from "openai";
 import { logger } from "../../lib/logger.js";
 import type { NormalizedResponse, SessionBlueprintData } from "../types.js";
 import { adaptVocal, type RawVocalResponse } from "../adapters.js";
+import { generatePrompt as buildBrainPrompt } from "../promptOS";
 
 // ─── Payloads ─────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,12 @@ export interface VocalDemoPayload {
 }
 
 export interface LeadVocalPayload {
+  title?: string;
+  // User-typed creative direction from the Audio Studio "Style / Direction" textarea.
+  // Free-form text describing the desired vocal vibe / artist references / mood —
+  // injected into the vocal AI brief with the highest priority so the user's exact
+  // intent reaches the vocal director without dilution.
+  style?: string;
   lyrics?: string;
   instrumentalUrl?: string;
   gender?: string;
@@ -128,7 +135,29 @@ function buildLeadVocalPrompt(p: LeadVocalPayload): string {
     ? `LYRICS PROVIDED:\n${p.lyrics.slice(0, 2000)}`
     : "No lyrics provided — give general vocal direction for this configuration.";
 
-  return `Generate a complete voice engine session brief for this vocal configuration:
+  // Unified Prompt Brain — leads the brief with the user's creative direction
+  // and structured DNA so every vocal request honours the same identity layer
+  // as instrumental and full-song generations.
+  const brainPrompt = buildBrainPrompt({
+    mode: "vocal",
+    title: p.title,
+    style: p.style,
+    genre: p.genre,
+    mood: p.songMood ?? p.emotionalTone,
+    bpm: p.bpm,
+    key: p.key,
+    artistDNA: {
+      referenceArtist: p.artistReference,
+      vocalTexture:    p.voiceTexture,
+      singerStyle:     p.singingStyle,
+      dialectDepth:    p.dialectDepth,
+    },
+  });
+
+  return `${brainPrompt}
+
+— VOCAL SESSION BRIEF —
+Generate a complete voice engine session brief for this vocal configuration:
 
 VOICE PERSONALIZATION:
   Gender / Voice Type: ${gender}

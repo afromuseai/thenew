@@ -229,7 +229,7 @@ export default function LibraryPage() {
               <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </button>
-            <Link to="/generate">
+            <Link to="/studio">
               <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-all shadow-md shadow-violet-900/40">
                 <Music className="w-4 h-4" />
                 Generate
@@ -262,7 +262,7 @@ export default function LibraryPage() {
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">
               Generate your first track and it will appear here automatically.
             </p>
-            <Link to="/generate">
+            <Link to="/studio">
               <button className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-all shadow-md shadow-violet-900/40">
                 Generate your first track
               </button>

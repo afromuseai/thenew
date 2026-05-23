@@ -110,6 +110,29 @@ router.post("/generate", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/music/library
+ * Returns the authenticated user's generated track history, newest first.
+ * Each row carries title, style, audioUrl, genre, mood, coverArt and createdAt
+ * so the Library UI can render and replay any previously generated track.
+ */
+router.get("/library", requireAuth, async (req, res) => {
+  const userId = req.userId!;
+
+  try {
+    const rows = await db
+      .select()
+      .from(generatedTracksTable)
+      .where(eq(generatedTracksTable.userId, userId))
+      .orderBy(sql`${generatedTracksTable.createdAt} desc`)
+      .limit(200);
+
+    res.json({ success: true, tracks: rows });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e?.message ?? "Library fetch failed" });
+  }
+});
+
 router.get("/usage", requireAuth, async (req, res) => {
   const userId = req.userId!;
 

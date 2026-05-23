@@ -123,6 +123,20 @@ export interface EngineJob {
   status: JobStatus;
   createdAt: number;
   response: NormalizedResponse | null;
+  // Optional generation context captured at job creation. Used by the polling
+  // endpoint to persist the result into generated_tracks with the user's exact
+  // title and style direction. Nullable so existing flows (mastering, stems,
+  // anonymous calls) keep working unchanged.
+  meta?: {
+    userId?: number;
+    title?: string;
+    style?: string;
+    genre?: string;
+    mood?: string;
+  };
+  // Persistence guard — flipped to true on first successful DB insert so repeat
+  // polls of /audio-job/:jobId don't create duplicate library rows.
+  persisted?: boolean;
 }
 
 // ─── Normalized Response ──────────────────────────────────────────────────────

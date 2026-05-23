@@ -1,0 +1,174 @@
+NEW ARCHITECTURE
+
+Create:
+
+/engine/promptOS/
+  compilePrompt.ts
+  priorityEngine.ts
+  contextAssembler.ts
+  styleDominance.ts
+  outputCompiler.ts
+  types.ts
+🧠 1. NEW CORE TYPE (PROMPT PACKET)
+types.ts
+export type Mode = "instrumental" | "vocal" | "full-song";
+
+export interface PromptPacket {
+  mode: Mode;
+
+  title?: string;
+  style?: string;
+
+  genre?: string;
+  mood?: string;
+  bpm?: string;
+  key?: string;
+
+  beatDNA?: any;
+  artistDNA?: any;
+
+  // NEW: OS CONTROL LAYER
+  priority: string[]; // execution order
+  styleLock: number;  // 0–1 strength
+}
+⚖️ 2. STYLE DOMINANCE ENGINE (CRITICAL)
+
+This is what makes it “OS-level”.
+
+styleDominance.ts
+export function calculateStyleDominance(style?: string) {
+  if (!style) return 0.2;
+
+  const length = style.length;
+
+  if (length > 120) return 1.0;   // full creative direction
+  if (length > 60) return 0.7;    // strong direction
+  if (length > 20) return 0.5;    // moderate
+  return 0.3;                     // weak cue
+}
+🧠 3. PRIORITY ENGINE (NEW RULE SYSTEM)
+priorityEngine.ts
+import { PromptPacket } from "./types";
+
+export function buildPriority(packet: PromptPacket): string[] {
+  const priority = [];
+
+  // 1. Style ALWAYS first if strong enough
+  if ((packet.styleLock ?? 0) > 0.5) {
+    priority.push("STYLE");
+  }
+
+  // 2. Mode defines structure behavior
+  priority.push("MODE");
+
+  // 3. Identity layer always before context
+  priority.push("TITLE");
+
+  // 4. Core musical parameters
+  priority.push("GENRE", "MOOD", "BPM", "KEY");
+
+  // 5. DNA last (influences but does not dominate)
+  priority.push("BEAT_DNA", "ARTIST_DNA");
+
+  return priority;
+}
+🧱 4. CONTEXT ASSEMBLER
+contextAssembler.ts
+export function assembleContext(packet: any) {
+  return {
+    identity: {
+      title: packet.title || "Untitled Track",
+      style: packet.style || "No specific direction provided",
+    },
+
+    music: {
+      genre: packet.genre,
+      mood: packet.mood,
+      bpm: packet.bpm,
+      key: packet.key,
+    },
+
+    dna: {
+      beat: packet.beatDNA,
+      artist: packet.artistDNA,
+    },
+
+    mode: packet.mode,
+  };
+}
+🧠 5. MAIN PROMPT COMPILER (CORE OS)
+compilePrompt.ts
+import { assembleContext } from "./contextAssembler";
+import { buildPriority } from "./priorityEngine";
+import { calculateStyleDominance } from "./styleDominance";
+
+export function compilePrompt(input: any) {
+  const styleLock = calculateStyleDominance(input.style);
+
+  const packet = {
+    ...input,
+    styleLock,
+  };
+
+  const priority = buildPriority(packet);
+  const ctx = assembleContext(packet);
+
+  const blocks: string[] = [];
+
+  for (const p of priority) {
+    switch (p) {
+      case "STYLE":
+        blocks.push(`
+USER CREATIVE DIRECTION (ABSOLUTE PRIORITY):
+${ctx.identity.style}
+        `.trim());
+        break;
+
+      case "TITLE":
+        blocks.push(`TITLE: ${ctx.identity.title}`);
+        break;
+
+      case "GENRE":
+        blocks.push(`GENRE: ${ctx.music.genre}`);
+        break;
+
+      case "MOOD":
+        blocks.push(`MOOD: ${ctx.music.mood}`);
+        break;
+
+      case "BPM":
+        blocks.push(`BPM: ${ctx.music.bpm}`);
+        break;
+
+      case "KEY":
+        blocks.push(`KEY: ${ctx.music.key}`);
+        break;
+
+      case "BEAT_DNA":
+        blocks.push(`BEAT DNA: ${JSON.stringify(ctx.dna.beat || {})}`);
+        break;
+
+      case "ARTIST_DNA":
+        blocks.push(`ARTIST DNA: ${JSON.stringify(ctx.dna.artist || {})}`);
+        break;
+
+      case "MODE":
+        blocks.push(
+          ctx.mode === "instrumental"
+            ? "OUTPUT: Instrumental only. No vocals."
+            : ctx.mode === "vocal"
+            ? "OUTPUT: Full vocal performance."
+            : "OUTPUT: Full song with vocals + instrumental."
+        );
+        break;
+    }
+  }
+
+  return {
+    prompt: blocks.join("\n\n"),
+    meta: {
+      styleLock,
+      priority,
+    },
+  };
+}

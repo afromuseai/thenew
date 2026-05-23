@@ -21,7 +21,6 @@ import Projects from "@/pages/Projects";
 import Admin from "@/pages/Admin";
 import PaymentCallback from "@/pages/PaymentCallback";
 import NotFound from "@/pages/not-found";
-import { GenerateMusic } from "@/components/GenerateMusic";
 import Library from "@/pages/Library";
 
 const queryClient = new QueryClient();
@@ -104,16 +103,6 @@ function Router() {
       <Route path="/library">
         <ProtectedRoute>
           <PageLayout><Library /></PageLayout>
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/generate">
-        <ProtectedRoute>
-          <PageLayout>
-            <div className="max-w-2xl mx-auto px-4 py-10">
-              <GenerateMusic />
-            </div>
-          </PageLayout>
         </ProtectedRoute>
       </Route>
 

@@ -34,11 +34,17 @@ import { getProviderCredentials } from "../providerCredentials.js";
 import { resolveModelAndClient } from "../nvidiaClient.js";
 import { analyzeLyricsSignal, resolveLyricsInfluence, buildLyricsAiContext } from "../lyricsSignal.js";
 import { registerTask, getCallbackResult, clearTask } from "../callbackStore.js";
+import { generatePrompt as buildBrainPrompt } from "../promptOS";
 
 // ─── Payload ──────────────────────────────────────────────────────────────────
 
 export interface InstrumentalPayload {
   title?: string;
+  // User-typed creative direction from the Audio Studio "Style / Direction" textarea.
+  // Free-form text describing the desired vibe / artist references / mood — flows
+  // directly into the AI prompt and the AI Music API style string with the highest
+  // priority so the user's exact intent reaches the model without dilution.
+  style?: string;
   genre?: string;
   mood?: string;
   bpm?: number;
@@ -214,7 +220,29 @@ function buildAiPrompt(p: InstrumentalPayload): string {
   const lyricsSignal = p.lyricsText?.trim() ? analyzeLyricsSignal(p.lyricsText) : null;
   const lyricsAiBlock = lyricsSignal ? buildLyricsAiContext(lyricsSignal) + "\n\n" : "";
 
-  return `Generate an instrumental session brief for this configuration:
+  // Unified Prompt Brain leads the NVIDIA brief so the same identity / context /
+  // DNA layers are applied to the structured session brief request as to the
+  // AI Music API generation request.
+  const brainHeader = buildBrainPrompt({
+    mode: "instrumental",
+    title: p.title,
+    style: p.style,
+    genre: p.genre,
+    mood: p.mood,
+    bpm: p.bpm,
+    key: p.key,
+    beatDNA: {
+      bounceStyle:   p.bounceStyle,
+      melodyDensity: p.melodyDensity,
+      drumCharacter: p.drumCharacter,
+      hookLift:      p.hookLift,
+    },
+  });
+
+  return `${brainHeader}
+
+— SESSION BRIEF REQUEST —
+Generate an instrumental session brief for this configuration:
 
 GENRE: ${genre}
 BPM: ${bpm}
@@ -670,14 +698,22 @@ export function buildInstrumentalDescription(p: InstrumentalPayload): BuiltPromp
   const lyricsSignal = p.lyricsText?.trim() ? analyzeLyricsSignal(p.lyricsText) : null;
   const sentence6 = lyricsSignal ? resolveLyricsInfluence(lyricsSignal) : null;
 
+  // User's free-form style direction takes top priority in both the prompt and the
+  // AI Music API style string, so the user's exact vibe reaches the model first.
+  const userDirection = (p.style ?? "").trim();
+
   // ── Assemble final prompt ─────────────────────────────────────────────────────
   const sentences = [sentence1, sentence2, sentence3, sentence4, sentence5, sentence6]
     .filter((s): s is string => Boolean(s?.trim()));
 
-  const prompt = sentences.join(" ") + " Instrumental only, no vocals.";
+  // Lead the prompt with the user's exact creative direction so the model honours
+  // it before reading the auto-generated descriptors.
+  const directionLead = userDirection ? `Direction from the artist: ${userDirection}. ` : "";
+  const prompt = directionLead + sentences.join(" ") + " Instrumental only, no vocals.";
 
   // Compact style string for AI Music API custom mode (max 1000 chars for chirp-v4-5+)
   const styleTagParts: string[] = [
+    userDirection || null,
     genre,
     `${bpm} BPM`,
     key,
@@ -781,8 +817,30 @@ function buildCallbackUrl(): string | null {
       (secs.hook?.length ?? 0) > 0 ||
       (secs.verse1?.length ?? 0) > 0;
 
-    const { prompt: descPrompt, styleString, brief } =
+    const { prompt: legacyDescPrompt, styleString, brief } =
       buildInstrumentalDescription(p);
+
+    // Unified Prompt Brain — single source of truth for the user-facing creative
+    // prompt. Sits in front of the legacy descriptor sentences so the brain's
+    // identity / context / DNA / mode layers always lead the request, while the
+    // existing styleString continues to feed the AI Music API style tag field.
+    const brainPrompt = buildBrainPrompt({
+      mode: hasLyrics ? "full-song" : "instrumental",
+      title: p.title,
+      style: p.style,
+      genre: p.genre,
+      mood: p.mood,
+      bpm: p.bpm,
+      key: p.key,
+      beatDNA: {
+        bounceStyle:   p.bounceStyle,
+        melodyDensity: p.melodyDensity,
+        drumCharacter: p.drumCharacter,
+        hookLift:      p.hookLift,
+      },
+    });
+
+    const descPrompt = `${brainPrompt}\n\n— SESSION DETAIL —\n${legacyDescPrompt}`;
 
     const base = process.env.CALLBACK_BASE_URL?.replace(/\/$/, "");
     const callbackUrl = base ? `${base}/api/instrumental/callback` : null;

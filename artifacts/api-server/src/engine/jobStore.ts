@@ -20,7 +20,11 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
-export function createEngineJob(type: AudioJobType, provider: ProviderCategory): EngineJob {
+export function createEngineJob(
+  type: AudioJobType,
+  provider: ProviderCategory,
+  meta?: EngineJob["meta"],
+): EngineJob {
   const job: EngineJob = {
     jobId: randomUUID(),
     provider,
@@ -28,9 +32,15 @@ export function createEngineJob(type: AudioJobType, provider: ProviderCategory):
     status: "queued",
     createdAt: Date.now(),
     response: null,
+    meta,
   };
   store.set(job.jobId, job);
   return job;
+}
+
+export function markJobPersisted(jobId: string): void {
+  const job = store.get(jobId);
+  if (job) job.persisted = true;
 }
 
 export function getEngineJob(jobId: string): EngineJob | undefined {

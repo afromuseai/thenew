@@ -72,7 +72,22 @@ interface Blueprint {
 }
 
 const AUDIO_GENRES = [
-  "Afrobeats", "Dancehall", "Amapiano", "Gospel", "Afro-fusion", "R&B Afro", "Street Pop",
+  "Afrobeats",
+  "Afropop",
+  "Amapiano",
+  "Dancehall",
+  "Afro R&B",
+  "Afro-fusion",
+  "Street Anthem",
+  "Spiritual / Gospel",
+  "Rap",
+  "UK Drill",
+  "Trap",
+  "Hip-Hop",
+  "Reggae",
+  "Dancehall-Drill",
+  "Hyperpop",
+  "Blues",
 ];
 
 const VOCAL_GENDERS = [
@@ -1257,6 +1272,8 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("artist");
 
   const [audioLyrics,          setAudioLyrics]          = useState("");
+  const [audioTrackTitle,      setAudioTrackTitle]      = useState("");
+  const [audioStyleDirection,  setAudioStyleDirection]  = useState("");
   const [audioGenre,           setAudioGenre]           = useState("Afrobeats");
   const [audioStyleReference,  setAudioStyleReference]  = useState("");
   const [productionStyle,      setProductionStyle]      = useState("");
@@ -1498,6 +1515,8 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
       const resolvedKey = musicalKey || defaults.key;
 
       const payload = {
+        title: audioTrackTitle.trim() || undefined,
+        style: audioStyleDirection.trim() || undefined,
         genre: audioGenre,
         mood: mood || "Uplifting",
         bpm: resolvedBpm,
@@ -1612,7 +1631,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
             const entry: GenHistoryEntry = {
               id: jobId,
               audioUrl: data.audioUrl,
-              title: `${audioGenre} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+              title: audioTrackTitle.trim() || `${audioGenre} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
               genre: audioGenre,
               mood: mood || "Uplifting",
               bpm: bpm || "—",
@@ -1721,6 +1740,8 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          title:           audioTrackTitle.trim() || undefined,
+          style:           audioStyleDirection.trim() || undefined,
           lyrics:          audioLyrics || undefined,
           instrumentalUrl: instrumentalUrl || undefined,
           gender:          vocalGender,
@@ -2424,6 +2445,34 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
           <div className="rounded-2xl border border-white/6 bg-white/[0.018] overflow-hidden">
             <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
 
+              {/* Track Title — user-defined song title before generation */}
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">Track Title</label>
+                <input
+                  type="text"
+                  value={audioTrackTitle}
+                  onChange={(e) => setAudioTrackTitle(e.target.value)}
+                  placeholder="Name your track (e.g. Lagos Nights)"
+                  className="w-full h-10 rounded-xl bg-white/4 border border-white/8 px-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all"
+                />
+              </div>
+
+              {/* Style / Direction — critical AI direction control */}
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
+                  Style / Direction
+                  <span className="ml-2 text-[8px] normal-case tracking-normal font-normal text-amber-400/50">AI direction control</span>
+                </label>
+                <textarea
+                  value={audioStyleDirection}
+                  onChange={(e) => setAudioStyleDirection(e.target.value)}
+                  rows={6}
+                  placeholder="A soulful Afrobeat love song with Burna Boy × Tems influence, emotional but danceable"
+                  className="w-full rounded-xl bg-white/4 border border-white/8 px-3 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all resize-none leading-relaxed"
+                />
+                <p className="text-[10px] text-white/18 mt-1.5 italic">Describe the vibe, references, mood, and emotion — the more direction, the sharper the result</p>
+              </div>
+
               {/* Genre */}
               <div>
                 <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">Genre</label>
@@ -2528,22 +2577,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                 <p className="text-[10px] text-white/18 mt-1.5 italic">Shapes the tonal and spatial direction of the session build</p>
               </div>
 
-              {/* Style Direction — direct ElevenLabs style override */}
-              <div className="sm:col-span-2 lg:col-span-3">
-                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
-                  Style Direction
-                  <span className="ml-2 text-[8px] normal-case tracking-normal font-normal text-amber-400/50">direct sound instruction</span>
-                </label>
-                <textarea
-                  value={productionStyle}
-                  onChange={(e) => setProductionStyle(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. heavy riddim beat, prominent bass guitar, instruments loud in the mix, full band with clear drums, vocals balanced with backing track..."
-                  className="w-full rounded-xl bg-white/4 border border-white/8 px-3 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all resize-none leading-relaxed"
-                />
-                <p className="text-[10px] text-white/18 mt-1.5 italic">Describe exactly how you want the production to sound — this goes straight to the AI generator</p>
-              </div>
-
             </div>
 
             <div className="px-5 pb-4 border-t border-white/4 pt-3">
@@ -2590,8 +2623,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                   <div className="w-4 h-4 rounded-md bg-sky-500/15 flex items-center justify-center">
                     <Radio className="w-2.5 h-2.5 text-sky-400" />
                   </div>
-                  <span className="text-[10px] font-bold tracking-widest uppercase text-sky-400/80">AI Music API</span>
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/12 border border-sky-500/20 text-sky-400/70">aimusicapi.org</span>
                 </div>
                 {/* Live / Mock status badge */}
                 {engineStatus && (

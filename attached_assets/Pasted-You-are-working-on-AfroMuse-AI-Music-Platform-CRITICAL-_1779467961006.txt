@@ -1,0 +1,71 @@
+You are working on AfroMuse AI Music Platform.
+
+🚨 CRITICAL RULE (MOST IMPORTANT)
+
+DO NOT remove, redesign, or restructure any existing UI in the Audio Studio.
+
+The current Audio Studio UI shown is FINAL and must be preserved exactly as it is.
+
+❌ FORBIDDEN ACTIONS
+Do NOT remove any sections (Lyrics, Beat DNA, Artist DNA, Audio Stack, Session Identity, etc.)
+Do NOT change layout structure or styling
+Do NOT convert UI into a form page
+Do NOT split or move existing components
+Do NOT create a new “Generate page” UI
+🚨 FIX REQUIRED (ONLY)
+
+There is currently a duplicate or unnecessary Generate page / Generate UI route.
+
+ONLY DO THIS:
+REMOVE any separate “Generate” page or route UI IF it exists outside Audio Studio
+ENSURE all generation is triggered ONLY from Audio Studio
+
+DO NOT modify Audio Studio itself.
+
+✨ REQUIRED ADDITIONS (SAFE ENHANCEMENTS ONLY)
+
+Add these fields inside Session Identity section in Audio Studio:
+
+1. 🎵 Title Field (IMPORTANT)
+Label: "Track Title"
+Purpose: user-defined song title before generation
+Optional but recommended
+Must be included in payload sent to backend
+2. 🎨 Style Field (IMPORTANT)
+Label: "Style / Direction"
+Placeholder example:
+“A soulful Afrobeat love song with Burna Boy × Tems influence, emotional but danceable”
+This field is critical for AI direction control
+Must be included in generation payload
+🧠 INTEGRATION RULE
+
+These fields must be:
+
+Added inside existing Session Identity section
+Styled consistent with current UI
+NOT placed in a new section
+NOT breaking layout spacing
+🎯 BEHAVIOR RULE
+
+When user clicks “Create Your Hit”:
+
+Payload MUST include:
+
+title (new field)
+style (new field)
+ALL existing fields unchanged
+💎 PRODUCT GOAL
+
+AfroMuse Audio Studio should remain:
+
+A premium Ableton-style AI music studio
+
+NOT:
+
+A form generator or multi-page app
+
+🚫 FINAL WARNING
+
+If any UI redesign, removal, or duplication of Audio Studio occurs again, it is incorrect.
+
+Only additions (Title + Style fields + cleanup of duplicate Generate page) are allowed.

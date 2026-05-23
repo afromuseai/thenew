@@ -1,0 +1,184 @@
+🧠 AFROMUSE PROMPT BRAIN (CORE DESIGN)
+🎯 Goal
+
+Replace all scattered prompt building logic with ONE unified system:
+
+Instrumental prompts
+Vocal prompts
+Full song prompts
+Future multi-artist generation
+
+ALL come from the same brain.
+
+📁 1. FILE STRUCTURE (ADD THIS)
+
+Create:
+
+/engine/promptBrain/
+  buildPrompt.ts
+  types.ts
+  styleWeighting.ts
+  dnaFusion.ts
+🧠 2. CORE TYPES
+types.ts
+export type GenerationMode = "instrumental" | "vocal" | "full-song";
+
+export interface PromptInput {
+  mode: GenerationMode;
+
+  title?: string;
+  style?: string;
+
+  genre?: string;
+  mood?: string;
+  bpm?: string;
+  key?: string;
+
+  beatDNA?: {
+    bounceStyle?: string;
+    melodyDensity?: string;
+    drumCharacter?: string;
+    hookLift?: string;
+  };
+
+  artistDNA?: {
+    referenceArtist?: string;
+    vocalTexture?: string;
+    singerStyle?: string;
+    dialectDepth?: string;
+  };
+}
+🧠 3. MAIN BRAIN FUNCTION
+buildPrompt.ts
+import { PromptInput } from "./types";
+
+/**
+ * AfroMuse Prompt Brain
+ * Single source of truth for ALL AI music prompts
+ */
+export function buildPrompt(input: PromptInput) {
+  const {
+    mode,
+    title,
+    style,
+    genre,
+    mood,
+    bpm,
+    key,
+    beatDNA,
+    artistDNA,
+  } = input;
+
+  const isVocal = mode === "vocal" || mode === "full-song";
+
+  // ─────────────────────────────────────────────
+  // 1. CORE IDENTITY LAYER (MOST IMPORTANT)
+  // ─────────────────────────────────────────────
+
+  const identityBlock = `
+USER CREATIVE DIRECTION (HIGHEST PRIORITY):
+${style || "No specific direction provided"}
+  `.trim();
+
+  // ─────────────────────────────────────────────
+  // 2. MUSIC CONTEXT LAYER
+  // ─────────────────────────────────────────────
+
+  const contextBlock = `
+TITLE: ${title || "Untitled Track"}
+GENRE: ${genre || "Unknown"}
+MOOD: ${mood || "Neutral"}
+BPM: ${bpm || "Auto"}
+KEY: ${key || "Auto"}
+  `.trim();
+
+  // ─────────────────────────────────────────────
+  // 3. BEAT DNA LAYER
+  // ─────────────────────────────────────────────
+
+  const beatBlock = beatDNA
+    ? `
+BEAT DNA:
+- Bounce: ${beatDNA.bounceStyle || "default"}
+- Melody Density: ${beatDNA.melodyDensity || "default"}
+- Drum Character: ${beatDNA.drumCharacter || "default"}
+- Hook Lift: ${beatDNA.hookLift || "default"}
+    `.trim()
+    : "";
+
+  // ─────────────────────────────────────────────
+  // 4. ARTIST DNA LAYER (VOCAL ONLY)
+  // ─────────────────────────────────────────────
+
+  const artistBlock =
+    isVocal && artistDNA
+      ? `
+ARTIST DNA:
+- Reference Artist: ${artistDNA.referenceArtist || "none"}
+- Vocal Texture: ${artistDNA.vocalTexture || "natural"}
+- Singer Style: ${artistDNA.singerStyle || "standard"}
+- Dialect Depth: ${artistDNA.dialectDepth || "light"}
+      `.trim()
+      : "";
+
+  // ─────────────────────────────────────────────
+  // 5. MODE INSTRUCTION LAYER
+  // ─────────────────────────────────────────────
+
+  const modeBlock =
+    mode === "instrumental"
+      ? `
+OUTPUT: Instrumental only. No vocals.
+Focus on beat, melody, arrangement, and groove.
+      `.trim()
+      : mode === "vocal"
+      ? `
+OUTPUT: Full vocal performance.
+Include lead vocals, structure, hook, and emotional delivery.
+      `.trim()
+      : `
+OUTPUT: Full song with vocals + instrumental integration.
+      `.trim();
+
+  // ─────────────────────────────────────────────
+  // FINAL PROMPT ASSEMBLY
+  // ─────────────────────────────────────────────
+
+  return [
+    identityBlock,
+    contextBlock,
+    beatBlock,
+    artistBlock,
+    modeBlock,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+⚙️ 4. HOW YOU CONNECT IT (IMPORTANT)
+
+Now replace ALL old prompt logic with:
+
+Example (instrumental.ts)
+import { buildPrompt } from "../promptBrain/buildPrompt";
+
+const prompt = buildPrompt({
+  mode: "instrumental",
+  title: payload.title,
+  style: payload.style,
+  genre: payload.genre,
+  mood: payload.mood,
+  bpm: payload.bpm,
+  key: payload.key,
+  beatDNA: payload.beatDNA,
+});
+Example (vocal.ts)
+const prompt = buildPrompt({
+  mode: "vocal",
+  title: payload.title,
+  style: payload.style,
+  genre: payload.genre,
+  mood: payload.mood,
+  bpm: payload.bpm,
+  key: payload.key,
+  artistDNA: payload.artistDNA,
+});

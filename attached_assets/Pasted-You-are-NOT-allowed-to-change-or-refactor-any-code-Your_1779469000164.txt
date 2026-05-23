@@ -1,0 +1,114 @@
+You are NOT allowed to change or refactor any code.
+
+Your only task is to VERIFY the current AfroMuse Audio Studio implementation and report issues clearly.
+
+I need a FULL audit of the system before any further development.
+
+---
+
+### 1. UI VERIFICATION (CRITICAL)
+
+Check Audio Studio UI and confirm:
+
+- Nothing has been removed from the existing layout
+- The following sections still exist and are visually intact:
+  - Lyrics Studio / Lyrics Editor
+  - Beat DNA panel
+  - Artist DNA panel
+  - Audio Stack sliders
+  - Session Identity section
+- No redesign or reordering of UI blocks has occurred
+- Spacing, styling, and layout remain identical to previous version
+
+IMPORTANT:
+If anything was removed or moved → list it clearly.
+
+---
+
+### 2. NEW FIELD VERIFICATION
+
+Confirm these fields exist inside Session Identity:
+
+- Track Title input field
+  - placeholder: "Name your track (e.g. Lagos Nights)"
+- Style / Direction input field
+  - placeholder must support long creative prompts (Afrobeat / Burna Boy / Tems style descriptions)
+
+Verify:
+- They are visible in UI
+- They are not breaking layout
+- They are not duplicating existing fields
+
+---
+
+### 3. DATA FLOW CHECK (VERY IMPORTANT)
+
+Verify that BOTH fields are correctly included in:
+
+- Instrumental generation request:
+  /api/generate-instrumental-preview
+- Full vocal generation request:
+  /api/generate-lead-vocals
+
+Check:
+- title is being passed correctly
+- style/direction is being passed correctly
+- no missing or undefined values
+- no silent overrides
+
+---
+
+### 4. GENERATION SYSTEM INTEGRITY
+
+Confirm:
+
+- Audio generation still works end-to-end
+- No broken handlers or missing functions
+- No UI buttons disconnected from API calls
+- No console errors during generation flow
+
+---
+
+### 5. ROUTING CLEANUP CHECK
+
+Verify:
+
+- /generate route is completely removed
+- Navbar "Generate" link is removed
+- Studio is now the ONLY generation entry point
+- /studio is the primary working route
+
+---
+
+### 6. FILE STRUCTURE CHECK
+
+Confirm:
+
+- No duplicate GenerateMusic components exist
+- No leftover deprecated generate page
+- No orphan API routes related to old generation system
+
+---
+
+### 7. SAFETY RULE
+
+DO NOT modify, rewrite, or “improve” anything.
+
+Only:
+- Inspect
+- Validate
+- Report issues
+
+---
+
+### OUTPUT FORMAT
+
+Give a clear report:
+
+✔ Working correctly
+❌ Issues found (with file + line reference)
+⚠️ Risks or inconsistencies
+
+---
+
+This is a production verification pass only.
