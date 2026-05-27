@@ -1,0 +1,139 @@
+
+Add the section-level inline edit button you are saying and also add
+
+🚀 AFROMUSE LYRICS INTELLIGENCE version....... (I don't remember the latest version number thats is why I used dots so check and to find which Version this will be named to and tell me after you add it)
+
+1. 🎭 EMOTIONAL INTENSITY GRADIENT LAYER
+PURPOSE
+
+This layer ensures emotional progression is not flat inside repeated sections.
+
+It forces escalation, contrast, and resolution across the song.
+
+🧠 CORE RULE
+
+Every repeated section MUST evolve emotionally.
+
+No identical emotional repetition allowed.
+
+📈 INTENSITY MODEL
+
+Each song must follow a controlled emotional curve:
+
+1. INTRO
+Sets emotional baseline
+Should NOT exaggerate energy labels
+Mood: subtle emotional setup
+2. VERSE 1
+Emotional exposure begins
+Low → mid intensity
+Focus: storytelling + vulnerability
+3. CHORUS 1
+First emotional release
+Strong but NOT peak
+4. CHORUS 2
+MUST be higher intensity than Chorus 1
+Add:
+stronger words
+deeper emotion
+slightly more urgency
+5. VERSE 2
+Deeper reflection OR emotional deterioration
+Should feel heavier than Verse 1
+6. BRIDGE
+🚨 EMOTIONAL PEAK MOMENT
+Must be the MOST vulnerable or intense section in the song
+Should exceed chorus emotionally
+7. FINAL CHORUS
+Hybrid of:
+emotional peak (bridge influence)
+musical repetition (chorus familiarity)
+Should feel like FINAL RELEASE
+❌ FORBIDDEN BEHAVIOR
+No identical chorus repetition across song
+No emotional flatline between sections
+No bridge weaker than chorus
+No static emotional tags reused blindly
+🧠 OUTPUT RULE
+
+System must:
+
+assign intensity score per section (1–10 internally)
+enforce progression consistency
+upgrade repeated sections automatically
+
+🎤 2. VOCAL FLOW ENGINE
+PURPOSE
+
+This layer controls how lyrics “sit” on rhythm, not what they say.
+
+It ensures Afrobeat delivery feels:
+
+groovy
+pocketed
+rhythmic
+performance-ready
+🧠 CORE RULE
+
+Every line must be written for vocal rhythm, not just meaning.
+
+🥁 FLOW CONTROL RULES
+1. SYLLABLE BALANCE
+
+Each line must respect:
+
+6–14 syllables ideal for verses
+4–10 syllables ideal for hooks
+
+Avoid:
+
+overly long sentences
+“essay-style” lyric lines
+2. RHYTHMIC POCKETING
+
+Lines must end in a way that allows:
+
+pause
+bounce
+ad-lib insertion
+
+Example pattern:
+
+statement → pause → echo/adlib
+3. INTERNAL RHYTHM SHIFT
+
+Every 2–4 lines:
+
+change cadence slightly
+vary stress pattern
+avoid monotone delivery flow
+4. AFROBEAT SWING RULE
+
+Lyrics must naturally allow:
+
+off-beat delivery
+syncopation
+call-and-response gaps
+5. CHORUS DESIGN RULE
+
+Chorus must:
+
+be simpler than verses
+have repeated phonetic hooks
+allow crowd participation feel
+❌ FORBIDDEN
+long academic sentences
+no rhythmic spacing
+no performance gaps
+no identical line rhythm throughout verse
+🧠 OUTPUT RULE
+
+System must:
+
+rewrite lines silently if rhythm is off
+optimize syllable distribution
+ensure “sung flow” > “read flow”
+
+
+
+TEST GENERATION AFTER FOR CONFIRMATION 
