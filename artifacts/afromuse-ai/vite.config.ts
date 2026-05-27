@@ -61,6 +61,13 @@ export default defineConfig({
         timeout: 300000,
         proxyTimeout: 300000,
       },
+      "/engine-api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/engine-api/, ""),
+        timeout: 300000,
+        proxyTimeout: 300000,
+      },
     },
   },
   preview: {

@@ -71,6 +71,32 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `artifacts/afromuse-ai/src/pages/Library.tsx` — track library page
 - `lib/db/src/schema/generatedTracks.ts` — DB schema for generated tracks
 
+## Music Engine (Python FastAPI)
+
+- New service in `artifacts/music-engine/main.py`, started via the `Music Engine` workflow on port **8000**.
+- `POST /generate` accepts `{prompt, key, bpm, mood, artist_dna, beat_dna}`, validates `key`/`bpm` as required, builds a structured `MusicSpec`, logs it, then returns `{status, audio_url, spec}`.
+- `generate_music_with_engine(spec)` calls the **ACE-Step** Hugging Face Space (`POST https://ace-step-ai-ace-step-v1-5.hf.space/run/predict`) with payload `{"data": [caption, genre, mood, key_scale, bpm, duration]}` (override via `ACE_STEP_URL` / `ACE_STEP_TIMEOUT` env vars). Audio URL is read from `response.json()["data"][0]` (string or dict shapes accepted).
+- On any failure (network error, non-2xx, malformed JSON, missing `data[0]`) the engine logs the full ACE-Step request + response (truncated to 2000 chars) and returns `{"status": "error", "audio_url": "", "spec": {...}, "error": "..."}` — the frontend gets a stable shape it can render.
+- The frontend Vite dev server proxies `/engine-api/*` → `http://localhost:8000/*` (see `artifacts/afromuse-ai/vite.config.ts`).
+- Frontend integration: the **Audio Studio tab on `/studio`** drives the engine via the engine selector (see next section). No standalone Generate / Engine page exists.
+- Backend logs both `Incoming Request:` and `Final Spec:` via `print(...)` (stdout) and `logger.info(...)`.
+
+### Engine selector inside Audio Studio (April 2026)
+
+The engine selector lives **inside the Audio Studio tab on `/studio`** (`AudioStudioV2.tsx`). There is no separate Generate / Engine page — all music generation happens in one place.
+
+- The selector sits at the very top of the Audio Studio form ("Generation Engine" section) with two pill cards:
+  - **AfroMuse Engine** (default) → Python FastAPI on port 8000 via `/engine-api/generate`
+  - **AfroMuse Cloud** → existing `/api/generate-instrumental-preview` pipeline (unchanged)
+- Internal `engine` state values: `"afromuse"` and `"cloud"`.
+- The third-party "Udio" brand is no longer surfaced anywhere in the UI.
+- When **AfroMuse Engine** is selected:
+  - A required **Engine Prompt** textarea appears directly under the selector (falls back to the Style Direction field if left blank).
+  - Clicking "Generate Instrumental" branches into `runAfroMuseEngine()` which composes `{ prompt, key, bpm, mood, artist_dna, beat_dna }` from the existing Audio Studio fields (Voice DNA → `artist_dna`; Beat DNA → `beat_dna`).
+  - `console.log("AfroMuse Payload:", payload)` before POSTing to `/engine-api/generate`.
+  - Validates `prompt`, `key`, `bpm` client-side and shows a destructive toast with the backend's error string otherwise.
+  - On success the returned `audio_url` flows into the existing `<AudioPlayer>` and the spec is shown as a collapsible **Engine Spec / Debug View** card (chips of key/value pairs + raw JSON) right below the player.
+
 ## AfroMuse Engine
 
 - The lyrics generation system prompt has been replaced with the AFROMUSE_ENGINE, a clean structured prompt with a fixed song structure (INTRO → CHORUS → VERSE1 → CHORUS → VERSE2 → CHORUS → BRIDGE → OUTRO) and simple rules: catchy chorus, storytelling verses, natural phrasing, short rhythmic lines.

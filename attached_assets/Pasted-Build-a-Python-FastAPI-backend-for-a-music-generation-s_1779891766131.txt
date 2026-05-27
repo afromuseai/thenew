@@ -1,0 +1,110 @@
+Build a Python FastAPI backend for a music generation system called AfroMuse.
+
+Requirements:
+
+1. Create a POST endpoint: /generate
+
+2. The endpoint should accept JSON input with:
+- prompt (string)
+- key (string)
+- bpm (integer)
+- mood (string)
+- artist_dna (string)
+- beat_dna (string)
+
+3. Convert the input into a structured music spec:
+
+{
+  "caption": prompt,
+  "key_scale": key,
+  "bpm": bpm,
+  "duration": 30,
+  "genre": "afrobeat",
+  "mood": mood,
+  "artist_dna": artist_dna,
+  "beat_dna": beat_dna
+}
+
+4. For now, DO NOT call any external API.
+Return the structured JSON as the response.
+
+5. Add proper validation and error handling.
+
+6. Run on port 8000.
+
+
+CONNECT  FRONTEND
+
+Update my frontend to connect to the AfroMuse backend.
+
+Requirements:
+
+1. Create a function that sends a POST request to:
+http://localhost:8000/generate
+
+2. Send this JSON:
+
+{
+  prompt,
+  key,
+  bpm,
+  mood,
+  artist_dna,
+  beat_dna
+}
+
+3. Display the returned JSON on screen.
+
+4. Add a loading state and error handling.
+
+5. Keep UI clean and simple.
+
+
+
+ADD ACE-STEP PLACEHOLDER (IMPORTANT)
+
+Update the backend to simulate music generation.
+
+After creating the structured spec:
+
+1. Add a fake response field:
+{
+  "status": "success",
+  "audio_url": "https://example.com/fake-audio.wav",
+  "spec": <generated spec>
+}
+
+2. Return this instead of just JSON.
+
+3. Structure code so that later we can replace the fake response with a real API call.
+
+
+PREPARE FOR REAL API
+
+Refactor the backend code to prepare for external API integration.
+
+1. Create a separate function:
+   generate_music_with_engine(spec)
+
+2. For now, return mock audio URL.
+
+3. Add comment:
+# Replace this with ACE-Step or other API later
+
+4. Keep code modular and clean.
+
+
+MAKE SURE KEY & BPM ARE NEVER LOST
+
+
+Update backend validation:
+
+1. Ensure key and bpm are REQUIRED fields
+2. If missing, return error:
+   "Key and BPM are required for music generation"
+
+3. Log the final spec before sending to generator
+
+4. Ensure key_scale and bpm are always present in output JSON
+
+

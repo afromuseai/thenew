@@ -22,7 +22,6 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { usePlan } from "@/context/PlanContext";
 import { getStoredToken } from "@/context/AuthContext";
-import { customFetch } from "@/utils/customFetch";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +69,25 @@ interface GenerationResult {
   title: string;
   coverArt?: string;
 }
+
+interface EngineSpec {
+  caption: string;
+  key_scale: string;
+  bpm: number;
+  duration: number;
+  genre: string;
+  mood: string;
+  artist_dna: string;
+  beat_dna: string;
+}
+
+interface EngineResult {
+  status: string;
+  audio_url: string;
+  spec: EngineSpec;
+}
+
+type EngineChoice = "cloud" | "afromuse";
 
 interface UsageInfo {
   used: number;
@@ -420,6 +438,14 @@ function TrackCard({
   );
 }
 
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="px-2 py-0.5 rounded-full bg-zinc-800/70 border border-zinc-700/60 text-zinc-300">
+      {children}
+    </span>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function GenerateMusic() {
@@ -471,10 +497,16 @@ export function GenerateMusic() {
   const [showAudioStack, setShowAudioStack] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Engine selector + AfroMuse-engine-only prompt field
+  const [engine, setEngine] = useState<EngineChoice>("afromuse");
+  const [prompt, setPrompt] = useState("");
+
   // Status
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [result, setResult] = useState<GenerationResult | null>(null);
+  const [engineResult, setEngineResult] = useState<EngineResult | null>(null);
+  const [showDebugView, setShowDebugView] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [playingTrack, setPlayingTrack] = useState<number | null>(null);
@@ -486,12 +518,100 @@ export function GenerateMusic() {
   const canUseBeatDNA = planId !== "free";
 
   // Fetch usage on mount
+function joinTruthy(parts: Array<string | undefined | null>, sep = ", "): string {
+  return parts.map((p) => (p ?? "").trim()).filter(Boolean).join(sep);
+}
+
 async function handleGenerate(e: React.FormEvent) {
   e.preventDefault();
 
   setIsLoading(true);
   setError(null);
+  setResult(null);
+  setEngineResult(null);
 
+  // ── Branch A: AfroMuse Engine (Python FastAPI) ──────────────────────────────
+  if (engine === "afromuse") {
+    const composedPrompt =
+      prompt.trim() ||
+      joinTruthy([genre, mood, soundReference, productionStyle], " ").trim();
+    const composedArtistDna = joinTruthy([
+      artistDNA.referenceArtist,
+      artistDNA.vocalTexture,
+      artistDNA.singerStyle,
+      artistDNA.dialectDepth,
+    ]);
+    const composedBeatDna = joinTruthy([
+      beatDNA.bounceStyle,
+      beatDNA.melodyDensity,
+      beatDNA.drumCharacter,
+      beatDNA.hookLift,
+    ]);
+
+    const enginePayload = {
+      prompt: composedPrompt,
+      key,
+      bpm: Number(bpm),
+      mood,
+      artist_dna: composedArtistDna,
+      beat_dna: composedBeatDna,
+    };
+
+    console.log("AfroMuse Payload:", enginePayload);
+
+    if (!enginePayload.prompt) {
+      setError("Prompt is required for the AfroMuse Engine.");
+      setIsLoading(false);
+      return;
+    }
+    if (!enginePayload.key) {
+      setError("Key and BPM are required for music generation");
+      setIsLoading(false);
+      return;
+    }
+    if (!enginePayload.bpm || Number.isNaN(enginePayload.bpm)) {
+      setError("Key and BPM are required for music generation");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/engine-api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(enginePayload),
+      });
+
+      if (!res.ok) {
+        let message = `Request failed with status ${res.status}`;
+        try {
+          const body = await res.json();
+          if (typeof body?.detail === "string") {
+            message = body.detail;
+          } else if (Array.isArray(body?.detail)) {
+            message =
+              body.detail
+                .map((d: { msg?: string }) => d.msg)
+                .filter(Boolean)
+                .join(", ") || message;
+          }
+        } catch {
+          /* ignore */
+        }
+        throw new Error(message);
+      }
+
+      const data = (await res.json()) as EngineResult;
+      setEngineResult(data);
+    } catch (err: any) {
+      setError(err?.message ?? "AfroMuse Engine request failed.");
+    } finally {
+      setIsLoading(false);
+    }
+    return;
+  }
+
+  // ── Branch B: AfroMuse Cloud (existing /api/music/generate pipeline) ───────
   const token = getStoredToken();
 
     const payload = {
@@ -564,8 +684,104 @@ async function handleGenerate(e: React.FormEvent) {
 }
 
   const usageLimitReached = usage ? usage.used >= usage.limit : false;
-  const isDisabled = isLoading || !!result;
-  const canGenerate = !!genre && !!mood && !isLoading && !usageLimitReached;
+  const isDisabled = isLoading || !!result || !!engineResult;
+  const canGenerate =
+    engine === "afromuse"
+      ? !isLoading
+      : !!genre && !!mood && !isLoading && !usageLimitReached;
+
+  function reset() {
+    setResult(null);
+    setEngineResult(null);
+    setError(null);
+    setShowDebugView(false);
+    setPlayingTrack(null);
+  }
+
+  // ── AfroMuse Engine Result View ─────────────────────────────────────────────
+  if (engineResult) {
+    return (
+      <div className="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden">
+        <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            AfroMuse Engine — {engineResult.status}
+          </h2>
+          <button
+            onClick={reset}
+            className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-sm transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            New track
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
+              Caption
+            </p>
+            <p className="text-white font-medium">{engineResult.spec.caption}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <Tag>{engineResult.spec.genre}</Tag>
+              <Tag>Key: {engineResult.spec.key_scale}</Tag>
+              <Tag>{engineResult.spec.bpm} BPM</Tag>
+              {engineResult.spec.mood && <Tag>Mood: {engineResult.spec.mood}</Tag>}
+              <Tag>{engineResult.spec.duration}s</Tag>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500 mb-3">
+              Audio
+            </p>
+            {engineResult.audio_url ? (
+              <>
+                <audio
+                  src={engineResult.audio_url}
+                  controls
+                  className="w-full rounded-lg"
+                  style={{ colorScheme: "dark" }}
+                />
+                <p className="mt-2 text-xs text-zinc-500 break-all">
+                  <a
+                    href={engineResult.audio_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-violet-400 underline"
+                  >
+                    {engineResult.audio_url}
+                  </a>
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-zinc-500">No audio yet</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+            <button
+              type="button"
+              onClick={() => setShowDebugView((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-zinc-300 hover:text-white transition-colors"
+            >
+              <span className="font-medium">Debug View</span>
+              {showDebugView ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+            {showDebugView && (
+              <pre className="px-4 pb-4 text-xs text-zinc-400 overflow-x-auto whitespace-pre-wrap break-words">
+                {JSON.stringify(engineResult.spec, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Result View ──────────────────────────────────────────────────────────────
   if (result) {
@@ -663,6 +879,58 @@ async function handleGenerate(e: React.FormEvent) {
       {/* Form */}
       {!isLoading && (
         <form onSubmit={handleGenerate} className="p-5 space-y-5">
+          {/* Engine Selector */}
+          <div>
+            <label className="block text-xs uppercase tracking-wider text-zinc-500 mb-2">
+              Generation Engine
+            </label>
+            <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 border border-zinc-800">
+              {(
+                [
+                  { value: "afromuse", label: "AfroMuse Engine" },
+                  { value: "cloud", label: "AfroMuse Cloud" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEngine(opt.value)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all
+                    ${
+                      engine === opt.value
+                        ? "bg-violet-600 text-white shadow-md shadow-violet-900/40"
+                        : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {engine === "afromuse" && (
+              <p className="text-xs text-zinc-500 mt-2">
+                Sends your inputs to the local Python engine. Returns a structured
+                spec + audio URL.
+              </p>
+            )}
+          </div>
+
+          {/* Prompt (used by the AfroMuse Engine) */}
+          {engine === "afromuse" && (
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-zinc-500 mb-2">
+                Prompt <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="e.g. Lagos sunset drive, smooth amapiano with log drums…"
+                disabled={isDisabled}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-violet-600 transition-colors disabled:opacity-60"
+              />
+            </div>
+          )}
+
           {/* Mode Toggle */}
           <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 border border-zinc-800">
             <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 border border-zinc-800 mt-2">

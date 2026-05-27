@@ -1532,6 +1532,14 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const [intelligence,       setIntelligence]       = useState<FullIntelligence | null>(null);
   const [sessionStartTime,   setSessionStartTime]   = useState<number | null>(null);
 
+  // ── AfroMuse Engine selector (lives inside Audio Studio) ──────────────────
+  // "afromuse" → POST /engine-api/generate (Python FastAPI on :8000)
+  // "cloud"    → existing /api/generate-instrumental-preview pipeline
+  const [engine, setEngine] = useState<"afromuse" | "cloud">("afromuse");
+  const [enginePrompt, setEnginePrompt] = useState("");
+  const [engineSpec, setEngineSpec] = useState<Record<string, unknown> | null>(null);
+  const [showEngineDebug, setShowEngineDebug] = useState(false);
+
   const isInstrumentalMode = generationMode === "instrumental";
   const hasLyrics          = audioLyrics.trim().length > 0 || draft !== null;
   const isProducer         = workflowMode === "producer";
@@ -1712,7 +1720,109 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
     return true;
   };
 
+  const runAfroMuseEngine = async () => {
+    setInstrumentalStatus("loading");
+    setInstrumentalAudioUrl(null);
+    setInstrumentalIsLive(false);
+    setEngineSpec(null);
+
+    const defaults    = getGenreDefaults(audioGenre);
+    const resolvedBpm = bpm ? Number(bpm.replace(/\D.*/, "")) || undefined : undefined;
+    const resolvedKey = musicalKey || defaults.key;
+
+    const composedPrompt =
+      enginePrompt.trim() ||
+      audioStyleDirection.trim() ||
+      [audioGenre, mood, productionStyle].filter(Boolean).join(" ").trim();
+
+    const composedArtistDna = [
+      voiceTexture,
+      singingStyle,
+      dialectDepth,
+    ].map((s) => (s ?? "").trim()).filter(Boolean).join(", ");
+
+    const composedBeatDna = [
+      bounceStyle,
+      melodyDensity,
+      drumCharacter,
+      hookLift,
+    ].map((s) => (s ?? "").trim()).filter(Boolean).join(", ");
+
+    const payload = {
+      prompt: composedPrompt,
+      key: resolvedKey,
+      bpm: resolvedBpm,
+      mood: mood || "Uplifting",
+      artist_dna: composedArtistDna,
+      beat_dna: composedBeatDna,
+    };
+
+    console.log("AfroMuse Payload:", payload);
+
+    if (!payload.prompt || !payload.key || !payload.bpm) {
+      setInstrumentalStatus("idle");
+      toast({
+        title: "Missing required fields",
+        description: "Prompt, Key and BPM are required for the AfroMuse Engine.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    startGenTimer();
+    setGenPhase("processing");
+    setGenProgress(40);
+
+    try {
+      const res = await fetch("/engine-api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        let errMsg = `AfroMuse Engine error (${res.status})`;
+        try {
+          const errJson = await res.json();
+          errMsg = errJson?.detail ?? errJson?.error ?? errMsg;
+        } catch { /* ignore parse error */ }
+        throw new Error(errMsg);
+      }
+
+      const data = (await res.json()) as {
+        status: string;
+        audio_url: string;
+        spec: Record<string, unknown>;
+      };
+
+      setGenProgress(100);
+      setGenPhase("done");
+      stopGenTimer();
+
+      setInstrumentalAudioUrl(data.audio_url);
+      setInstrumentalIsLive(false);
+      setEngineSpec(data.spec);
+      setInstrumentalStatus("success");
+      setBlueprintStatus("success");
+    } catch (err) {
+      console.error("AfroMuse Engine error:", err);
+      setGenPhase("failed");
+      stopGenTimer();
+      setInstrumentalStatus("idle");
+      toast({
+        title: "AfroMuse Engine failed",
+        description: err instanceof Error ? err.message : "Could not reach the AfroMuse Engine.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const runInstrumental = async () => {
+    if (engine === "afromuse") {
+      await runAfroMuseEngine();
+      return;
+    }
+
     setInstrumentalStatus("loading");
     setInstrumentalAudioUrl(null);
     setInstrumentalIsLive(false);
@@ -2546,6 +2656,75 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
       </div>
 
       <div className="p-6 md:p-8 space-y-7">
+
+        {/* ══════════════════════════════════════════
+            ENGINE SELECTOR — AfroMuse Engine vs Cloud
+        ══════════════════════════════════════════ */}
+        <div>
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-5 h-5 rounded-md bg-violet-500/12 border border-violet-500/22 flex items-center justify-center shrink-0">
+              <Sliders className="w-3 h-3 text-violet-400" />
+            </div>
+            <div>
+              <h3 className="text-[11px] font-bold tracking-widest uppercase text-white/55">Generation Engine</h3>
+              <p className="text-[10px] text-white/25 mt-0.5">Pick which engine renders this session.</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/6 bg-white/[0.018] p-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {([
+                {
+                  value: "afromuse" as const,
+                  label: "AfroMuse Engine",
+                  desc: "Local Python engine — structured spec + audio URL.",
+                },
+                {
+                  value: "cloud" as const,
+                  label: "AfroMuse Cloud",
+                  desc: "Full cloud pipeline with vocals, mixing & polish.",
+                },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEngine(opt.value)}
+                  className={`relative flex flex-col gap-1.5 p-3.5 rounded-xl border text-left transition-all ${
+                    engine === opt.value
+                      ? "bg-violet-500/10 border-violet-500/30 shadow-[0_0_16px_rgba(139,92,246,0.08)]"
+                      : "bg-white/3 border-white/8 hover:border-violet-500/20 hover:bg-violet-500/[0.04]"
+                  }`}
+                >
+                  <span className={`text-xs font-bold ${engine === opt.value ? "text-violet-300" : "text-white/45"}`}>
+                    {opt.label}
+                    {engine === opt.value && (
+                      <span className="ml-2 text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400">Active</span>
+                    )}
+                  </span>
+                  <p className={`text-[10px] leading-snug ${engine === opt.value ? "text-violet-400/60" : "text-white/22"}`}>{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {engine === "afromuse" && (
+              <div>
+                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
+                  Engine Prompt <span className="text-rose-400/70">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={enginePrompt}
+                  onChange={(e) => setEnginePrompt(e.target.value)}
+                  placeholder="e.g. Lagos sunset drive, smooth amapiano with log drums…"
+                  className="w-full rounded-xl bg-white/[0.025] border border-white/8 px-4 py-2.5 text-sm text-white placeholder:text-white/15 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/10 transition-all resize-none"
+                />
+                <p className="text-[10px] text-white/25 mt-1.5 leading-relaxed">
+                  Required by the AfroMuse Engine. If left blank, Style Direction below is used as the prompt.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* ══════════════════════════════════════════
             SECTION 1 — LYRICS SOURCE
@@ -4181,6 +4360,41 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                     }}
                     sessionMeta={{ genre: audioGenre, energy: energyLevel, hitmakerMode: useHitmakerHookPriority }}
                   />
+                )}
+
+                {/* ── AfroMuse Engine Spec / Debug View ─────────────────── */}
+                {engine === "afromuse" && engineSpec && (
+                  <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowEngineDebug((v) => !v)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-violet-500/[0.06] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Sliders className="w-3.5 h-3.5 text-violet-400" />
+                        <span className="text-[10px] font-bold tracking-[0.13em] uppercase text-violet-300">Engine Spec</span>
+                        <span className="text-[9px] text-violet-400/60">Debug View</span>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-violet-400/60 transition-transform ${showEngineDebug ? "rotate-180" : ""}`} />
+                    </button>
+
+                    <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+                      {Object.entries(engineSpec)
+                        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+                        .slice(0, 8)
+                        .map(([k, v]) => (
+                          <span key={k} className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300/80">
+                            <span className="text-violet-400/60">{k}:</span> {String(v).slice(0, 32)}
+                          </span>
+                        ))}
+                    </div>
+
+                    {showEngineDebug && (
+                      <pre className="px-4 pb-4 text-[10px] leading-relaxed text-violet-200/80 overflow-x-auto whitespace-pre-wrap break-words">
+                        {JSON.stringify(engineSpec, null, 2)}
+                      </pre>
+                    )}
+                  </div>
                 )}
 
                 {/* ── Generation History ────────────────────────────────── */}
