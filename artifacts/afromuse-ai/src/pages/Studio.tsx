@@ -25,6 +25,11 @@ import { usePlan, PLAN_LIMITS, type Plan } from "@/context/PlanContext";
 import { useProjectLibrary, extractResumeState } from "@/context/ProjectLibraryContext";
 import type { SavedSession } from "@/lib/projectLibrary";
 
+const stripBpmSuffix = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  return String(value).replace(/\s*b\.?p\.?m\.?\s*$/i, "").trim();
+};
+
 type GenerationStatus = "idle" | "generating" | "done";
 type StudioTab = "lyric" | "audio" | "release";
 
@@ -1661,7 +1666,7 @@ export default function Studio() {
                               <span className="px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold">Key: {draft.productionNotes.key}</span>
                             )}
                             {draft.productionNotes?.bpm && (
-                              <span className="px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[11px] font-bold">{draft.productionNotes.bpm} BPM</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[11px] font-bold">{stripBpmSuffix(draft.productionNotes.bpm)} BPM</span>
                             )}
                           </div>
                         </div>
@@ -2459,7 +2464,7 @@ export default function Studio() {
                                   {draft.productionNotes.bpm && (
                                     <span className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-white/5 border border-white/8 text-white/70">
                                       <span className="text-white/35 font-medium">BPM</span>
-                                      <span className="text-white/80 font-semibold">{draft.productionNotes.bpm}</span>
+                                      <span className="text-white/80 font-semibold">{stripBpmSuffix(draft.productionNotes.bpm)} BPM</span>
                                     </span>
                                   )}
                                   {draft.productionNotes.energy && (
@@ -2650,7 +2655,7 @@ export default function Studio() {
                         <div className="grid grid-cols-4 gap-2 mb-3">
                           {[
                             { label: "Key",    value: draft?.productionNotes?.key ?? "—" },
-                            { label: "BPM",    value: draft?.productionNotes?.bpm ?? "—" },
+                            { label: "BPM",    value: draft?.productionNotes?.bpm ? stripBpmSuffix(draft.productionNotes.bpm) : "—" },
                             { label: "Energy", value: draft?.productionNotes?.energy ?? "—" },
                             { label: "Hook",   value: draft?.productionNotes?.hookStrength ?? "—" },
                           ].map((item) => (
@@ -2849,7 +2854,7 @@ export default function Studio() {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: "Key", value: draft?.productionNotes?.key ?? "—" },
-                  { label: "BPM", value: draft?.productionNotes?.bpm ?? "—" },
+                  { label: "BPM", value: draft?.productionNotes?.bpm ? stripBpmSuffix(draft.productionNotes.bpm) : "—" },
                   { label: "Energy", value: draft?.productionNotes?.energy ?? "—" },
                   { label: "Hook", value: draft?.productionNotes?.hookStrength ?? "—" },
                 ].map((item) => (

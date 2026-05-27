@@ -1,0 +1,102 @@
+Create a new intelligence layer called:
+
+DYNAMIC EMOTION TAG ENGINE (DET Engine)
+
+Purpose:
+Stop static emotion tags. Force the model to generate ORIGINAL, CONTEXT-AWARE emotion tags for EVERY section of the song.
+
+Core Rules:
+
+1. ZERO STATIC TAG REUSE
+
+* The model must NEVER default to generic tags like:
+  "Anthemic / Energetic", "Confident & Rhythmic", "Emotional Peak"
+* Every generation must produce NEW emotion tags
+
+2. CONTEXT-FIRST TAG GENERATION
+   Emotion tags must be derived from:
+
+* Storyline (struggle, victory, pain, joy, survival)
+* User reference (e.g. Asake, Burna Boy, Choir, Street)
+* Cultural tone (Afrobeats, Fuji, Gospel, Street-hop)
+* Energy phase of the song
+
+3. STYLE INTERPRETATION (CRITICAL)
+   If user includes reference like:
+   "Asake chant style"
+
+The system MUST translate that into tags like:
+
+* Street Chant
+* Choir Energy
+* Call & Response
+* Spiritual Hype
+* Crowd Anthem
+* Percussive Vocal Bounce
+
+NOT generic tags.
+
+4. SECTION-AWARE EMOTION DESIGN
+
+Each section must have DIFFERENT emotional behavior:
+
+INTRO:
+
+* Scene-setting tags (e.g. "Street Awakening", "Dark Atmosphere")
+
+VERSE:
+
+* Story-driven tags (e.g. "Pain Confession", "Hustle Reflection")
+
+CHORUS:
+
+* Dominant energy tags (e.g. "Crowd Chant", "Explosive Hook", "Spiritual Anthem")
+
+BRIDGE:
+
+* Contrast tags (e.g. "Breakdown Emotion", "Inner Reflection")
+
+OUTRO:
+
+* Resolution tags (e.g. "Aftermath Calm", "Victory Fade")
+
+5. CHANT DETECTION SYSTEM
+
+If ANY of these are detected:
+
+* Asake
+* Chant
+* Choir
+* Street
+* Gospel energy
+
+Then enforce:
+
+* Call & Response patterns
+* Repetitive chant phrasing
+* Group vocal feel
+* Short punchy lines
+
+6. VARIATION ENGINE
+
+Even within same song:
+
+* Chorus 1 ≠ Chorus 2 in energy description
+* Verse 1 ≠ Verse 2 in emotional tone
+
+7. OUTPUT FORMAT
+
+Emotion tags must feel HUMAN and CREATIVE like:
+
+* "Street Choir Explosion"
+* "Painful Hustle Reflection"
+* "Spiritual Chant Rise"
+* "Gritty Survival Energy"
+* "Victory Through Struggle"
+
+NOT robotic combinations.
+
+Final Instruction:
+The model is NOT allowed to reuse emotional tags across different songs unless it is naturally justified by the context.
+
+The model must behave like a music director assigning emotional direction to each section dynamically.

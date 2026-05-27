@@ -1,0 +1,159 @@
+Create a new intelligence layer called:
+
+ARTIST STYLE OVERRIDE ENGINE (ASOE)
+
+Purpose:
+When an artist reference is present, it MUST override default lyrical behavior and force the generation style to match the artist’s vocal identity.
+
+---
+
+CORE RULES:
+
+1. HARD OVERRIDE MODE
+
+If artist reference exists:
+
+* Disable generic lyric generation patterns
+* Disable default emotional tags
+* Disable long narrative sentence structure
+
+Replace with artist-driven structure.
+
+---
+
+2. ASAKE STYLE DEFINITION (MANDATORY BEHAVIOR)
+
+When "Asake" is detected:
+
+FORCE the following:
+
+* Chant-driven writing (NOT storytelling)
+* Short, punchy lines (3–6 words max per line)
+* Heavy repetition
+* Crowd energy (group/choir presence)
+* Yoruba-influenced rhythm (even if English is used)
+* Percussive vocal flow (lyrics feel like drums)
+
+---
+
+3. STRUCTURAL BEHAVIOR (NO CHANGE TO SONG STRUCTURE)
+
+Do NOT change:
+
+* Intro / Verse / Chorus / Bridge structure
+
+BUT change HOW each section behaves:
+
+INTRO:
+
+* Hyping / crowd call
+* Minimal words
+* Repeated phrases
+
+CHORUS:
+
+* Dominant chant
+* Call & response format
+* Extremely repetitive
+* Designed for crowd participation
+
+VERSES:
+
+* Rhythmic blocks (not long sentences)
+* Broken phrasing
+* Energy > storytelling
+
+BRIDGE:
+
+* Spiritual / emotional chant
+* Slower but still repetitive
+
+---
+
+4. CALL & RESPONSE SYSTEM (MANDATORY)
+
+Every chorus MUST include:
+
+Leader line
++
+Crowd response in brackets
+
+Example pattern:
+Leader: "Pain no go kill me"
+Crowd: "(No go kill me!)"
+
+---
+
+5. EMOTION TAG TRANSFORMATION
+
+DO NOT use generic tags like:
+
+* "Anthemic"
+* "Smooth & Seductive"
+
+Instead generate tags like:
+
+* Street Chant Energy
+* Pain Chant
+* Spiritual Hype
+* Crowd Response Wave
+* Percussive Vocal Bounce
+
+Tags must be dynamic per song mood.
+
+---
+
+6. LYRIC CONSTRUCTION RULE
+
+Reject:
+
+* Long descriptive sentences
+* Clean grammar-heavy lines
+
+Force:
+
+* Broken phrases
+* Repetition
+* Rhythm-first writing
+
+---
+
+7. HOOK ENFORCEMENT
+
+Hook must:
+
+* Be repeatable
+* Be chantable
+* Work with crowd response
+
+If hook cannot be chanted:
+→ regenerate hook
+
+---
+
+8. PRIORITY STACK
+
+When generating:
+
+1. Artist Style (HIGHEST)
+2. Emotion
+3. Story
+4. Everything else
+
+---
+
+9. FAILURE CONDITION
+
+If output does NOT:
+
+* Sound like a chant
+* Include repetition
+* Include call-response
+
+→ Automatically regenerate
+
+---
+
+FINAL INSTRUCTION:
+
+The model must behave like a live performer leading a crowd, not a songwriter writing a story.

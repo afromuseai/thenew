@@ -856,6 +856,10 @@ Sections not in the arrangement must be empty arrays []. The example below shows
   "songIdentityReport": { "selectedIdentity": "EMOTIONAL", "hookStyle": "melodic", "replayType": "emotional", "uniquenessScore": 80, "chorusLineCount": 8, "identityReasoning": "" },
   "hookVariants": { "variantA": "", "variantB": "", "variantC": "", "selectedVariant": "A", "selectedHook": "" },
   "trueVariationCheck": { "whatMakesThisDifferent": "", "antiSamenessPass": true },
+  "artistStyleTranslation": { "vocalTexture": "", "energyStyle": "", "deliveryPattern": "", "emotionalTone": "", "crowdBehavior": "", "blendNotes": "" },
+  "artistStyleOverride": { "active": false, "mode": "none", "primaryArtist": "", "isHardChant": false, "enforcedBehaviors": [], "lineLengthBudget": "" },
+  "dynamicEmotionTags": { "intro": [], "verse1": [], "hook1": [], "verse2": [], "bridge": [], "hook2": [], "hook3": [], "outro": [] },
+  "lyricsIntelligenceCore": { "priorityStackApplied": "", "vocalFlowBySection": { "intro": "", "verse1": "", "hook1": "", "verse2": "", "bridge": "", "hook2": "", "outro": "" }, "callAndResponse": [], "adlibsBySection": { "intro": [], "verse1": [], "hook1": [], "verse2": [], "bridge": [], "hook2": [], "outro": [] }, "failureChecks": { "genericTagsUsed": false, "chantMissing": false, "weakHook": false, "flatProgression": false, "regenerate": false } },
   "keeperLine": "",
   "keeperLineBackups": [],
   "hitPrediction": ""
@@ -922,8 +926,8 @@ Return ONLY this JSON object — no markdown, no code fences, no explanation:
 
 {
   "productionNotes": {
-    "key": "Musical key (e.g. F# minor)",
-    "bpm": "BPM value or range (e.g. 94–98 BPM)",
+    "key": "Musical key — pick a SPECIFIC key that fits the genre + mood (e.g. F# minor, A minor, E minor, G major). DO NOT default to C minor unless the song genuinely demands it. Vary across generations.",
+    "bpm": "Numeric BPM value or range — DIGITS ONLY, do NOT include the word 'BPM' (e.g. 96 or 94-98). Pick a tempo that fits the genre + mood + energy, do not default to 100.",
     "energy": "Energy level and feel (e.g. Mid-tempo, emotionally heavy, reflective)",
     "hookStrength": "Hook strength rating and reason (e.g. High — keeper line is instantly memorable and screaming-ready)",
     "lyricalDepth": "Lyrical depth assessment (e.g. Deep — rich imagery, emotional layers, human storytelling throughout)",
@@ -1873,6 +1877,17 @@ function buildUserPrompt(
     ...getMelodyDirectionBlock(genre, mood, params.performanceFeel ?? "Smooth"),
     ...getVoiceStyleSimulationBlock(mood, params.performanceFeel ?? "Smooth", params.genderVoiceModel ?? "Random", genre),
     ...getArtistInspirationBlock(params.artistInspiration),
+    // ── AFROMUSE LYRICS INTELLIGENCE V8.1 (ALIC stack) ───────────────────
+    // Layer order matters. ALIC is the constitution; the others are the laws.
+    //   1. ALIC core    — priority stack + vocal flow + hook + adlib + call&response
+    //   2. ASTE         — soft style decomposition (5-attribute decomposition)
+    //   3. ASOE         — hard artist override (chant mode, line length, etc.)
+    //   4. DET / DETE   — section-aware behavior-driving emotion tags
+    // When two engines disagree, the higher-priority one wins per ALIC §1.
+    ...getAfromuseLyricsIntelligenceCoreBlock(params.artistInspiration, style, mood, genre),
+    ...getArtistStyleTranslationBlock(params.artistInspiration, style, genre, mood, effectiveFlavor),
+    ...getArtistStyleOverrideBlock(params.artistInspiration, style, genre, mood),
+    ...getDynamicEmotionTagBlock(topic, params.artistInspiration, style, genre, mood, effectiveFlavor, params.performanceFeel ?? "Smooth"),
     ...getLyricalDepthBlock(params.lyricalDepth ?? "Balanced"),
     ...getPerformanceFeelBlock(params.performanceFeel ?? "Smooth"),
     ...getVoiceTextureBlock(params.voiceTexture ?? "Balanced"),
@@ -1938,7 +1953,14 @@ export interface HitScoreReport {
 
 function validateStructure(draft: SongDraft, profile: DiversityProfile): ValidationResult {
   const failures: string[] = [];
+  const softIssues: string[] = [];
   const sections: SectionKey[] = ["intro", "hook", "verse1", "verse2", "bridge", "outro"];
+
+  // Tolerance: line count within ±2 of any target is a SOFT drift (acceptable
+  // — kept as best-effort), not a hard failure. This prevents wasting a 100 s+
+  // strict-retry on a draft Qwen produced 1 line over schema. Drift >2 lines
+  // stays a hard failure (real structural problem we want to retry).
+  const LINE_DRIFT_TOLERANCE = 2;
 
   for (const section of sections) {
     const value = draft[section];
@@ -1953,11 +1975,17 @@ function validateStructure(draft: SongDraft, profile: DiversityProfile): Validat
     }
 
     if (!targets.includes(len)) {
-      failures.push(`${section} has ${len} lines — expected ${targets.join(" or ")} for ${profile.dnaMode}`);
+      const minDrift = Math.min(...targets.map((t) => Math.abs(t - len)));
+      const message = `${section} has ${len} lines — expected ${targets.join(" or ")} for ${profile.dnaMode}`;
+      if (len > 0 && minDrift <= LINE_DRIFT_TOLERANCE) {
+        softIssues.push(`${message} (within ±${LINE_DRIFT_TOLERANCE} tolerance)`);
+      } else {
+        failures.push(message);
+      }
     }
   }
 
-  return { valid: failures.length === 0, failures };
+  return { valid: failures.length === 0, failures, softIssues };
 }
 
 /**
@@ -2059,17 +2087,166 @@ function deepCheckLyrics(draft: SongDraft): { issues: string[] } {
  *   start at 1000, subtract 100 per structural failure, subtract 25 per soft
  *   issue, floor at 0. A perfect draft scores 1000.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V8.1 — ENGINE COMPLIANCE AUDIT
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Programmatic gate that converts the ALIC / ASOE / DET prompt rules from
+// "please" into "must". Every draft is audited against the trace fields the
+// model is REQUIRED to populate. Non-compliant drafts get heavily demoted in
+// best-of-N selection so the better-behaved sibling wins. We deliberately
+// don't auto-regenerate (would 2x latency); instead, the parallel Qwen +
+// Llama-4 race already gives us a second draft to fall back on.
+//
+// HARD FAILS (-200 each — usually disqualifying):
+//   - All three trace fields missing entirely (model ignored everything)
+//   - artistStyleOverride.isHardChant=true but callAndResponse is empty
+//   - dynamicEmotionTags missing or empty when an artist reference exists
+//   - Any banned static tag appears verbatim in dynamicEmotionTags
+//   - Hook lines exceed the artist's line-length budget by >2 words
+//
+// SOFT ISSUES (-25 each — penalty but not disqualifying):
+//   - Same emotion tag appears in 2+ sections (tag diversity violation)
+//   - lyricsIntelligenceCore.failureChecks.regenerate flagged true by model
+//   - vocalFlowBySection or adlibsBySection missing
+//   - Generic-looking tag (no concrete storyline word, < 2 words long)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BANNED_EMOTION_TAGS_LC = new Set([
+  "anthemic energy", "catchy hook energy", "emotional peak", "powerful performance",
+  "smooth & melodic", "smooth and melodic", "high energy", "vibey mood",
+  "confident rhythm", "soft & reflective", "soft and reflective", "energetic vibe",
+  "uplifting mood", "chill vibe", "hype energy", "romantic mood", "sad reflection",
+  "party energy", "generic pain", "generic joy", "generic spiritual", "generic love",
+  "anthemic", "energetic", "smooth & seductive", "smooth and seductive",
+]);
+
+interface ComplianceAudit {
+  hardFails: string[];
+  softIssues: string[];
+}
+
+function auditEngineCompliance(draft: SongDraft): ComplianceAudit {
+  const hardFails: string[] = [];
+  const softIssues: string[] = [];
+
+  const aso = draft.artistStyleOverride as Record<string, unknown> | undefined;
+  const det = draft.dynamicEmotionTags as Record<string, unknown> | undefined;
+  const alic = draft.lyricsIntelligenceCore as Record<string, unknown> | undefined;
+
+  // ── Trace field presence ────────────────────────────────────────────────
+  const allMissing = !aso && !det && !alic;
+  if (allMissing) {
+    hardFails.push("ALIC/ASOE/DET trace fields all missing — model ignored intelligence layers");
+    return { hardFails, softIssues }; // no point checking further
+  }
+
+  // ── Chant-mode call-and-response enforcement ───────────────────────────
+  const isHardChant = Boolean(aso?.isHardChant);
+  const cAndR = alic?.callAndResponse;
+  const cAndRCount = Array.isArray(cAndR) ? cAndR.length : 0;
+  if (isHardChant && cAndRCount === 0) {
+    hardFails.push("ASOE chant mode active but callAndResponse pairs are empty");
+  }
+
+  // ── DET tag presence + banned-tag detection ────────────────────────────
+  if (det) {
+    const allTags: string[] = [];
+    for (const v of Object.values(det)) {
+      if (Array.isArray(v)) {
+        for (const t of v) {
+          if (typeof t === "string") allTags.push(t);
+        }
+      }
+    }
+    if (allTags.length === 0 && aso && (aso as { active?: boolean }).active) {
+      hardFails.push("dynamicEmotionTags empty despite an artist reference");
+    }
+    // Banned-tag check — case-insensitive whole-tag match
+    for (const t of allTags) {
+      const norm = t.trim().toLowerCase();
+      if (BANNED_EMOTION_TAGS_LC.has(norm)) {
+        hardFails.push(`Banned static emotion tag used verbatim: "${t}"`);
+      }
+    }
+    // Soft tag-diversity check — same tag across 2+ sections
+    const seenInSection = new Map<string, string[]>();
+    for (const [section, val] of Object.entries(det)) {
+      if (!Array.isArray(val)) continue;
+      for (const t of val) {
+        if (typeof t !== "string") continue;
+        const k = t.trim().toLowerCase();
+        if (!k) continue;
+        const arr = seenInSection.get(k) ?? [];
+        arr.push(section);
+        seenInSection.set(k, arr);
+      }
+    }
+    for (const [tag, sections] of seenInSection) {
+      if (sections.length >= 2) {
+        softIssues.push(`Tag "${tag}" repeats across sections: ${sections.join(", ")}`);
+      }
+    }
+    // Soft generic-looking-tag check — single word OR contains only generic words
+    for (const t of allTags) {
+      const words = t.trim().split(/\s+/).filter(Boolean);
+      if (words.length < 2) softIssues.push(`Tag too generic (single word): "${t}"`);
+    }
+  }
+
+  // ── Hook line-length budget enforcement when override active ───────────
+  const lineLengthBudget = (aso?.lineLengthBudget as string | undefined) ?? "";
+  const budgetMatch = lineLengthBudget.match(/(\d+)\s*[–\-]\s*(\d+)/);
+  if (isHardChant && budgetMatch && Array.isArray(draft.hook)) {
+    const maxBudget = parseInt(budgetMatch[2], 10);
+    const hookLines = draft.hook.filter((l): l is string => typeof l === "string");
+    const overshoot = hookLines.filter(
+      (l) => l.replace(/\([^)]*\)/g, "").trim().split(/\s+/).filter(Boolean).length > maxBudget + 2,
+    );
+    if (overshoot.length > 0) {
+      hardFails.push(
+        `${overshoot.length} hook line(s) exceed chant-mode line-length budget (${maxBudget} words)`,
+      );
+    }
+  }
+
+  // ── Self-flagged regeneration ──────────────────────────────────────────
+  const failureChecks = alic?.failureChecks as Record<string, unknown> | undefined;
+  if (failureChecks?.regenerate === true) {
+    softIssues.push("Model self-flagged failureChecks.regenerate=true");
+  }
+
+  // ── Trace coverage ─────────────────────────────────────────────────────
+  if (alic) {
+    const flow = alic.vocalFlowBySection as Record<string, unknown> | undefined;
+    const adlibs = alic.adlibsBySection as Record<string, unknown> | undefined;
+    if (!flow || Object.keys(flow).length === 0) softIssues.push("vocalFlowBySection missing");
+    if (!adlibs || Object.keys(adlibs).length === 0) softIssues.push("adlibsBySection missing");
+  }
+
+  return { hardFails, softIssues };
+}
+
 function scoreLyricsDraft(draft: SongDraft, profile: DiversityProfile): ValidationResult {
   const structural = validateStructure(draft, profile);
   const deep = deepCheckLyrics(draft);
+  const compliance = auditEngineCompliance(draft);
   const score = Math.max(
     0,
-    1000 - structural.failures.length * 100 - deep.issues.length * 25,
+    1000
+      - structural.failures.length * 100
+      - deep.issues.length * 25
+      - compliance.hardFails.length * 200
+      - compliance.softIssues.length * 25,
   );
   return {
-    valid: structural.valid && deep.issues.length === 0,
-    failures: structural.failures,
-    softIssues: deep.issues,
+    valid: structural.valid && deep.issues.length === 0 && compliance.hardFails.length === 0,
+    failures: [...structural.failures, ...compliance.hardFails],
+    softIssues: [
+      ...(structural.softIssues ?? []),
+      ...deep.issues,
+      ...compliance.softIssues,
+    ],
     qualityScore: score,
     hitScore: computeHitScore(draft),
   };
@@ -2304,17 +2481,27 @@ export function computeHitScore(draft: SongDraft): HitScoreReport {
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-// LYRICS — Qwen3.5-122B is the sole primary: 122B parameters, purpose-built
-//   for dense instruction-following. It reliably honors keeper-line placement,
-//   dialect rules, line-count targets, and JSON schema constraints better than
-//   smaller models. Llama-4-Maverick (17B MoE) is the emergency fallback only
-//   — it runs only if Qwen fails outright (API error / timeout).
-// FLOW   — Llama-4-Maverick primary (faster for shorter production brief).
+// CLEAN ROLE SPLIT (locked April 30, 2026 — user directive: "only Qwen for
+// lyrics, only Maverick for the Blueprint, Qwen is more good at lyrics").
+//
+// LYRICS — Qwen3.5-122B owns the lyrics end-to-end. 122B params, purpose-built
+//   for dense instruction-following: keeper-line placement, dialect rules,
+//   exact line counts, and the full JSON schema. If the first Qwen pass has
+//   structural issues, we re-roll Qwen with the strict prompt; if Qwen still
+//   fails, we re-roll Qwen one more time at a cooler temperature for stability.
+//   Maverick is intentionally NOT in the lyrics path — it does not see the
+//   lyrics prompt under any circumstances.
+//
+// BLUEPRINT (production / flow) — Llama-4-Maverick (17B MoE) owns the blueprint
+//   end-to-end. Faster for the shorter, structured production brief and frees
+//   Qwen to focus entirely on lyrics. If the first Maverick call fails, we
+//   re-roll Maverick at a cooler temperature. Qwen is intentionally NOT in
+//   the blueprint path.
 
-const QWEN_LYRICS_MODEL      = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",      temperature: 0.88 };
-const MAVERICK_LYRICS_MODEL  = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.92 };
-const LLAMA_70B_FLOW_MODEL   = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.78 };
-const MAVERICK_FLOW_BACKUP   = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",      temperature: 0.75 };
+const QWEN_LYRICS_MODEL       = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",     temperature: 0.88 };
+const QWEN_LYRICS_RETRY_MODEL = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",     temperature: 0.72 };
+const MAVERICK_FLOW_MODEL     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.78 };
+const MAVERICK_FLOW_RETRY     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.62 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -2454,7 +2641,7 @@ router.post("/generate-song", async (req, res) => {
         temperature: model.temperature,
         top_p: 0.95,
         max_tokens: 4000,
-      }, { signal: AbortSignal.timeout(35_000) });
+      }, { signal: AbortSignal.timeout(200_000) });
       const raw  = response.choices[0]?.message?.content ?? "";
       const draft = parseJson(raw) as SongDraft | null;
       const validation: ValidationResult = draft
@@ -2462,11 +2649,20 @@ router.post("/generate-song", async (req, res) => {
         : { valid: false, failures: ["parse error"], softIssues: [], qualityScore: 0 };
       return { model: model.name, draft, validation };
     } catch (err) {
-      logger.warn({ model: model.name, err }, "Lyrics model call failed");
+      const errObj = err as { name?: string; type?: string; constructor?: { name?: string } } | undefined;
+      const ctorName = errObj?.constructor?.name;
+      const isAbort =
+        ctorName === "APIUserAbortError" ||
+        ctorName === "AbortError" ||
+        errObj?.name === "APIUserAbortError" ||
+        errObj?.name === "AbortError" ||
+        errObj?.type === "APIUserAbortError";
+      const failureLabel = isAbort ? "api timeout" : "api error";
+      logger.warn({ model: model.name, err, failureLabel, ctorName }, "Lyrics model call failed");
       return {
         model: model.name,
         draft: null,
-        validation: { valid: false, failures: ["api error"], softIssues: [], qualityScore: 0 },
+        validation: { valid: false, failures: [failureLabel], softIssues: [], qualityScore: 0 },
       };
     }
   };
@@ -2498,7 +2694,7 @@ router.post("/generate-song", async (req, res) => {
     })[0] ?? null;
   };
 
-  // ── Call flow/production model (Llama-3.3-70B primary, Llama-4-Maverick backup) ──
+  // ── Call flow/production model (Llama-4-Maverick owns the blueprint end-to-end) ──
   const callFlowModel = async (lyricsDraft: SongDraft): Promise<Record<string, unknown> | null> => {
     const effectiveFlavor = promptParams.languageFlavor === "Custom" && promptParams.customFlavor?.trim()
       ? `Custom: ${promptParams.customFlavor.trim()}`
@@ -2540,14 +2736,15 @@ router.post("/generate-song", async (req, res) => {
       }
     };
 
-    // Primary: Llama-3.3-70B
-    logger.info({ model: LLAMA_70B_FLOW_MODEL.name }, "Starting flow/production details generation");
-    const primary = await tryFlow(LLAMA_70B_FLOW_MODEL);
+    // Primary: Llama-4-Maverick (owns the blueprint end-to-end)
+    logger.info({ model: MAVERICK_FLOW_MODEL.name }, "Starting Maverick blueprint generation");
+    const primary = await tryFlow(MAVERICK_FLOW_MODEL);
     if (primary) return primary;
 
-    // Backup: Llama-4-Maverick
-    logger.warn("Llama-3.3-70B flow failed — falling back to Llama-4-Maverick backup");
-    return await tryFlow(MAVERICK_FLOW_BACKUP);
+    // Retry: Llama-4-Maverick at a cooler temperature for stability
+    // (Qwen is intentionally NOT used for the blueprint — Maverick owns it.)
+    logger.warn("Maverick blueprint failed — retrying Maverick at cooler temperature");
+    return await tryFlow(MAVERICK_FLOW_RETRY);
   };
 
   try {
@@ -2558,8 +2755,15 @@ router.post("/generate-song", async (req, res) => {
     // dense, multi-rule prompts: keeper-line placement, dialect depth,
     // exact line counts, and the full JSON schema. It runs alone with a
     // generous 35 s window so it is never cut off mid-generation.
-    logger.info({ model: QWEN_LYRICS_MODEL.name }, "Starting Qwen primary lyrics generation");
+    const promptChars = userPrompt.length + SYSTEM_PROMPT.length;
+    const estTokens = Math.round(promptChars / 4);
+    logger.info(
+      { model: QWEN_LYRICS_MODEL.name, promptChars, estPromptTokens: estTokens, timeoutSec: 200 },
+      "Starting Qwen primary lyrics generation",
+    );
+    const startMs = Date.now();
     const qwenResult = await callLyricsModel(QWEN_LYRICS_MODEL, userPrompt);
+    logger.info({ elapsedMs: Date.now() - startMs }, "Qwen primary call returned");
     logger.info(
       { score: qwenResult.validation.qualityScore, valid: qwenResult.validation.valid, failures: qwenResult.validation.failures, soft: qwenResult.validation.softIssues },
       "Qwen primary complete",
@@ -2570,11 +2774,12 @@ router.post("/generate-song", async (req, res) => {
 
     // ── Step 2 — Strict retry if Qwen had structural issues ────────────
     // If Qwen returned a draft but failed structural checks, give it a
-    // second shot with the strict prompt before falling back to Maverick.
+    // second shot with the strict prompt. Maverick is intentionally NOT
+    // invoked — Qwen owns the lyrics path end-to-end.
     if (!finalLyricsDraft && qwenResult.draft) {
       logger.warn(
         { score: qwenResult.validation.qualityScore, failures: qwenResult.validation.failures },
-        "Qwen draft had quality issues — running strict retry",
+        "Qwen draft had quality issues — running Qwen strict retry",
       );
       const strictPrompt = buildUserPrompt(promptParams, true);
       const retryResult  = await callLyricsModel(QWEN_LYRICS_MODEL, strictPrompt);
@@ -2589,20 +2794,29 @@ router.post("/generate-song", async (req, res) => {
       }
     }
 
-    // ── Step 3 — Maverick emergency fallback (only if Qwen failed) ─────
-    // Maverick only runs if Qwen produced no draft at all (API error /
-    // hard timeout). Its output is used as-is — no strict retry.
-    if (!bestSoFar || !bestSoFar.draft) {
-      logger.warn("Qwen returned no draft — engaging Maverick emergency fallback");
-      const maverickResult = await callLyricsModel(MAVERICK_LYRICS_MODEL, userPrompt);
+    // ── Step 3 — Qwen cool-temperature retry (only if Qwen returned no draft) ─
+    // If both prior Qwen calls produced no usable draft, do one more Qwen
+    // attempt at a cooler temperature for stability. SKIPPED if the prior
+    // failure was a timeout (the cool retry would just timeout again, wasting
+    // another 150 s). Maverick is intentionally NOT engaged for lyrics.
+    const priorWasTimeout =
+      bestSoFar?.validation.failures?.includes("api timeout") ?? false;
+    const lastResultWasTimeout =
+      qwenResult.validation.failures?.includes("api timeout") ?? false;
+    const shouldSkipCoolRetry = priorWasTimeout || lastResultWasTimeout;
+    if ((!bestSoFar || !bestSoFar.draft) && !shouldSkipCoolRetry) {
+      logger.warn("Qwen returned no draft — running Qwen cool-temperature retry");
+      const coolResult = await callLyricsModel(QWEN_LYRICS_RETRY_MODEL, userPrompt);
       logger.info(
-        { score: maverickResult.validation.qualityScore, valid: maverickResult.validation.valid },
-        "Maverick emergency fallback complete",
+        { score: coolResult.validation.qualityScore, valid: coolResult.validation.valid },
+        "Qwen cool-temperature retry complete",
       );
-      if (maverickResult.draft) {
-        bestSoFar = maverickResult;
-        finalLyricsDraft = maverickResult.draft;
+      if (coolResult.draft) {
+        bestSoFar = coolResult;
+        finalLyricsDraft = coolResult.validation.valid ? coolResult.draft : coolResult.draft;
       }
+    } else if (shouldSkipCoolRetry && (!bestSoFar || !bestSoFar.draft)) {
+      logger.warn("Skipping Qwen cool retry — prior call timed out (would just timeout again)");
     }
 
     if (bestSoFar && !finalLyricsDraft && bestSoFar.draft) {
@@ -2619,18 +2833,20 @@ router.post("/generate-song", async (req, res) => {
       return;
     }
 
-    // ── Qwen flow/production details — runs after lyrics are finalized ────
-    // Cap at 28 s so the total request stays well under 60 s.
-    logger.info("Starting Qwen3.5-122B flow/production details generation");
+    // ── Maverick blueprint (production / flow) — runs after lyrics are finalized ────
+    // 35 s cap matches the new lyrics-call ceiling so the blueprint isn't
+    // unfairly choked. Total request can run up to ~80 s end-to-end if both
+    // models need their full window.
+    logger.info("Starting Llama-4-Maverick blueprint generation");
     const flowData = await Promise.race([
       callFlowModel(finalLyricsDraft),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 25_000)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 35_000)),
     ]);
 
     if (flowData) {
-      logger.info("Qwen flow details generated — merging with lyrics draft");
+      logger.info("Maverick blueprint generated — merging with lyrics draft");
     } else {
-      logger.warn("Qwen flow details unavailable — returning lyrics-only draft");
+      logger.warn("Maverick blueprint unavailable — returning lyrics-only draft");
     }
 
     // ── Merge lyrics + production details into final draft ────────────────
@@ -4238,6 +4454,696 @@ export function getVoiceStyleSimulationBlock(
     "Before submitting, re-read each section and ask:",
     "  \"Does this sound like the same person who sang the previous section?\"",
     "If not, rewrite until the voice locks in.",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V8 — ARTIST STYLE TRANSLATION ENGINE (ASTE)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Takes ANY artist reference (single or multi) and forces the model to
+// dynamically decompose it into vocal behavior — vocal texture, energy
+// style, delivery pattern, emotional tone, crowd behavior — instead of
+// matching a hardcoded artist→template lookup. The decomposed style then
+// flows into the Dynamic Emotion Tag Engine so emotion tags reflect the
+// artist's actual vibe, not generic defaults.
+//
+// Key principles:
+//   - DO NOT COPY artists — borrow STYLE BEHAVIOR only.
+//   - Multi-artist input ("Asake + Burna") = blend with priority logic.
+//   - Unknown artists = generalize from genre + name + user description.
+//   - Style influences EVERYTHING: emotion tags, chorus, verse, adlibs, hook.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ArtistTokenResult {
+  raw: string[];
+  hasChantSignal: boolean;
+  primary?: string;
+  secondary?: string;
+  extras: string[];
+}
+
+const CHANT_SIGNAL_TOKENS = [
+  "asake", "chant", "choir", "street", "gospel", "spiritual",
+  "fuji", "hymn", "call and response", "call-response", "crowd",
+];
+
+function parseArtistInputs(...inputs: (string | undefined)[]): ArtistTokenResult {
+  const cleaned = inputs
+    .map((s) => (s ?? "").trim())
+    .filter((s) => s.length > 0 && !["random", "none", "auto", "n/a", "na"].includes(s.toLowerCase()))
+    .join(" + ");
+
+  if (!cleaned) {
+    return { raw: [], hasChantSignal: false, extras: [] };
+  }
+
+  const tokens = cleaned
+    .split(/\s*(?:[,+&\/]|\band\b|\bplus\b|\bx\b|\bvs\.?\b)\s*/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+
+  const lc = cleaned.toLowerCase();
+  const hasChantSignal = CHANT_SIGNAL_TOKENS.some((k) => lc.includes(k));
+
+  return {
+    raw: tokens,
+    hasChantSignal,
+    primary: tokens[0],
+    secondary: tokens[1],
+    extras: tokens.slice(2),
+  };
+}
+
+export function getArtistStyleTranslationBlock(
+  artistInspiration: string | undefined,
+  styleReference: string | undefined,
+  genre: string,
+  mood: string,
+  languageFlavor: string,
+): string[] {
+  const parsed = parseArtistInputs(artistInspiration, styleReference);
+  if (parsed.raw.length === 0) return [];
+
+  const artistList = parsed.raw.join(" + ");
+  const isMulti = parsed.raw.length >= 2;
+
+  const blendingRules = isMulti
+    ? [
+        "── MULTI-ARTIST BLENDING ──",
+        `Multiple references detected: ${artistList}`,
+        `  PRIMARY (dominant behavior):  ${parsed.primary}`,
+        `  SECONDARY (flavor layer):     ${parsed.secondary}`,
+        ...(parsed.extras.length ? [`  ADDITIONAL FLAVOR LAYERS:     ${parsed.extras.join(", ")}`] : []),
+        "",
+        "Blend rules:",
+        "  - Primary controls the dominant vocal posture, hook personality, and emotional tone.",
+        "  - Secondary contributes flavor — texture, adlib energy, occasional phrasing accents.",
+        "  - Do NOT pick only one. Do NOT 50/50 the styles. Lead with primary, season with secondary.",
+        "  - If the two artists conflict (e.g. chant artist + smooth artist), keep the primary's structural",
+        "    DNA (chant vs melodic) and let the secondary color the in-between moments.",
+        "",
+      ]
+    : [];
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🎤 ARTIST STYLE TRANSLATION ENGINE — ASTE",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    `Artist reference(s): ${artistList}`,
+    `Genre context:       ${genre}`,
+    `Mood context:        ${mood}`,
+    `Language flavor:     ${languageFlavor}`,
+    "",
+    "── HARD RULES ──",
+    "  1. DO NOT COPY any artist's actual lyrics, exact phrases, or signature flows.",
+    "  2. DO NOT name-drop the reference artist inside the lyrics.",
+    "  3. ONLY borrow STYLE BEHAVIOR — vocal posture, delivery, performance energy.",
+    "  4. The result should feel \"inspired by\" the artist, NOT \"trying to be\" them.",
+    "",
+    "── STEP 1: STYLE DECOMPOSITION (MANDATORY INTERNAL THINKING) ──",
+    "Before writing a single line, internally decompose the reference into FIVE attributes.",
+    "These attributes will drive every section, every adlib, every hook decision:",
+    "",
+    "  A. VOCAL TEXTURE   — smooth · rough · airy · chant-like · breathy · gritty · nasal · warm",
+    "  B. ENERGY STYLE    — calm · explosive · mid-tempo bounce · spiritual · restrained · cinematic",
+    "  C. DELIVERY PATTERN — melodic · rhythmic · spoken · chant · call-and-response · sing-rap",
+    "  D. EMOTIONAL TONE  — confident · pain-driven · reflective · celebratory · defiant · vulnerable",
+    "  E. CROWD BEHAVIOR  — solo · group chant · choir · background harmonies · street response · stadium",
+    "",
+    "Pick the values that authentically describe the reference. If it's a known artist (Asake, Burna,",
+    "Wizkid, Rema, Black Sherif, Omah Lay, Travis Scott, etc.), use the well-known traits. If it's an",
+    "unknown artist, INFER from the genre + mood + language flavor + any descriptive words in the name.",
+    "",
+    "── STEP 2: APPLY THE DECOMPOSED STYLE EVERYWHERE ──",
+    "The decomposed style must affect ALL of the following — not just one of them:",
+    "  • Emotion tags (handed off to the DET Engine below)",
+    "  • Chorus / hook structure and chantability",
+    "  • Verse delivery rhythm and breath placement",
+    "  • Adlib density, type, and placement",
+    "  • Hook phrasing length and crowd-callback opportunity",
+    "",
+    ...blendingRules,
+    "── STEP 3: GENERALIZATION (NO HARDCODED LIST) ──",
+    "If the reference is an artist you don't have strong knowledge of, do NOT default to generic",
+    "Afrobeats template. Build a plausible style profile from:",
+    "  - The genre cue above",
+    "  - The mood cue above",
+    "  - The language/dialect cue above",
+    "  - Any descriptive context the user provided in their notes",
+    "",
+    "── STEP 4: OUTPUT TRACE (REQUIRED IN JSON) ──",
+    "Populate the `artistStyleTranslation` field in the JSON output with your DECOMPOSED choices:",
+    "  { vocalTexture, energyStyle, deliveryPattern, emotionalTone, crowdBehavior, blendNotes }",
+    "This is how the system audits whether the engine actually fired — leaving it blank is a failure.",
+    "",
+    "Final test before output:",
+    `  "Would a producer who knows ${parsed.primary ?? artistList} say 'yes, this feels like that lane'?"`,
+    "  If not, rewrite the verse / hook / adlibs until the lane locks in.",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V8 — DYNAMIC EMOTION TAG ENGINE (DET)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Stops static emotion-tag reuse. Forces the model to invent ORIGINAL,
+// CONTEXT-AWARE emotion tags for EVERY section of the song. Tags are
+// derived from storyline + artist reference + cultural tone + section
+// energy phase, NOT from a fixed pool. Section-aware design means intro
+// gets scene-setting tags, verses get story-driven tags, hooks get
+// dominant-energy tags, etc. Chorus 1 ≠ Chorus 2; Verse 1 ≠ Verse 2.
+//
+// When a chant signal is detected (Asake / chant / choir / street /
+// gospel / spiritual reference), the engine enforces call-and-response
+// patterns, repetitive chant phrasing, group-vocal feel, and short
+// punchy lines on top of everything else.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getDynamicEmotionTagBlock(
+  topic: string,
+  artistInspiration: string | undefined,
+  styleReference: string | undefined,
+  genre: string,
+  mood: string,
+  languageFlavor: string,
+  performanceFeel: string,
+): string[] {
+  const parsed = parseArtistInputs(artistInspiration, styleReference);
+  const artistContext = parsed.raw.length > 0 ? parsed.raw.join(" + ") : "(no artist reference)";
+
+  const chantBlock = parsed.hasChantSignal
+    ? [
+        "",
+        "── CHANT DETECTION SYSTEM: ENGAGED ──",
+        `A chant-energy signal was detected in the artist/style reference (${artistContext}).`,
+        "When chant mode is engaged, the DET Engine MUST enforce these behaviors throughout the song:",
+        "  1. Call-and-response patterns inside the hook (lead line → crowd reply line)",
+        "  2. Repetitive chant phrasing — short anchor phrases that loop with micro-variations",
+        "  3. Group-vocal feel — write hooks that an entire crowd can chant after one listen",
+        "  4. Short punchy lines — verses lean toward percussive 4–7 word lines, not long sentences",
+        "  5. Spiritual / street hype emotion tags must dominate over polished pop tags",
+        "",
+        "Chant-mode tag examples (NOT for direct reuse — generate originals in this lane):",
+        "  • \"Street Choir Explosion\"   • \"Crowd Echo Anthem\"",
+        "  • \"Spiritual Chant Rise\"     • \"Group Hype Lift\"",
+        "  • \"Percussive Vocal Bounce\"  • \"Call & Response Surge\"",
+      ]
+    : [];
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🔥 DYNAMIC EMOTION TAG ENGINE — DET",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    "Behave like a music director assigning emotional direction to each section dynamically.",
+    "Generate ORIGINAL, CONTEXT-AWARE emotion tags for EVERY section. NEVER reuse static defaults.",
+    "",
+    "CONTEXT INPUTS (derive every tag from these — not from a fixed pool):",
+    `  • Storyline / Theme:     ${topic}`,
+    `  • Artist reference(s):   ${artistContext}`,
+    `  • Genre / cultural tone: ${genre}`,
+    `  • Mood:                  ${mood}`,
+    `  • Language flavor:       ${languageFlavor}`,
+    `  • Performance feel:      ${performanceFeel}`,
+    "",
+    "── RULE 1: ZERO STATIC TAG REUSE ──",
+    "The following generic defaults are BANNED unless the storyline genuinely earns them",
+    "AND they are reframed with specific cultural / storyline context:",
+    "  ✗ \"Anthemic / Energetic\"   ✗ \"Confident & Rhythmic\"   ✗ \"Emotional Peak\"",
+    "  ✗ \"High Energy\"            ✗ \"Smooth & Melodic\"        ✗ \"Soft & Reflective\"",
+    "  ✗ \"Powerful Performance\"   ✗ \"Catchy Hook Energy\"      ✗ \"Vibey Mood\"",
+    "Any tag that could appear on ANY song is a failed tag. Replace it.",
+    "",
+    "── RULE 2: STYLE INTERPRETATION (CRITICAL) ──",
+    "If the artist reference implies a specific cultural delivery (e.g. \"Asake chant style\"),",
+    "translate that into specific tags. Examples of the QUALITY level expected (do not copy):",
+    "  Asake-type → \"Street Chant\", \"Choir Energy\", \"Call & Response\", \"Spiritual Hype\",",
+    "               \"Crowd Anthem\", \"Percussive Vocal Bounce\"",
+    "  Burna-type → \"Afro-Fusion Groove\", \"Layered Melody Emotion\", \"Confident Global Energy\"",
+    "  Wizkid-type → \"Smooth Minimal Vibe\", \"Calm Confidence\", \"Subtle Groove\"",
+    "  Rema-type  → \"Playful Bounce\", \"Experimental Flow\", \"Youthful Energy\"",
+    "Generate tags AT THIS LEVEL OF SPECIFICITY for whatever artist reference is provided.",
+    "",
+    "── RULE 3: SECTION-AWARE EMOTION DESIGN (MANDATORY PER-SECTION TAGS) ──",
+    "Each section must get a DIFFERENT emotional behavior. Use the section's role in the arc:",
+    "  INTRO   → scene-setting tags (e.g. \"Street Awakening\", \"Dark Atmosphere\", \"Quiet Arrival\")",
+    "  VERSE   → story-driven tags (e.g. \"Pain Confession\", \"Hustle Reflection\", \"Memory Pull\")",
+    "  CHORUS  → dominant energy tags (e.g. \"Crowd Chant\", \"Explosive Hook\", \"Spiritual Anthem\")",
+    "  BRIDGE  → contrast tags (e.g. \"Breakdown Emotion\", \"Inner Reflection\", \"Quiet Pivot\")",
+    "  OUTRO   → resolution tags (e.g. \"Aftermath Calm\", \"Victory Fade\", \"Final Stamp\")",
+    "",
+    "── RULE 4: WITHIN-SONG VARIATION ──",
+    "Even within the same song, sections that REPEAT must NOT repeat their emotion tag verbatim:",
+    "  • Chorus 1 tag ≠ Chorus 2 tag ≠ Chorus 3 tag (the energy evolves each return)",
+    "  • Verse 1 tag ≠ Verse 2 tag (the emotional weight shifts as the story progresses)",
+    "Tags should describe how the SAME hook FEELS DIFFERENT the second and third time it lands.",
+    "",
+    "── RULE 5: CROSS-SONG ORIGINALITY ──",
+    "Do NOT reuse the same tag set from any imagined previous song. Each generation invents fresh tags.",
+    "If a tag feels like it could appear on a stock-music library page, REWRITE it with cultural specificity.",
+    "",
+    "── RULE 5b: STORYLINE-ROOTED REQUIREMENT (HARD) ──",
+    `THIS song's storyline: "${topic}"`,
+    "EVERY emotion tag you generate must contain at least ONE concrete word, image, character,",
+    "verb, or feeling drawn DIRECTLY from the storyline above. Tags that are interchangeable with",
+    "any other song's tags are FAILED tags. Examples of the bond required:",
+    "  storyline: \"losing my mother to cancer\"  →  tag: \"Hospital Room Confession\" (NOT \"Sad Reflection\")",
+    "  storyline: \"hustle in Lagos traffic\"     →  tag: \"Danfo Survival Pulse\"     (NOT \"Hustle Energy\")",
+    "  storyline: \"praying for forgiveness\"     →  tag: \"Midnight Penitence Chant\"  (NOT \"Spiritual Wave\")",
+    "If a tag could be lifted onto a different song's storyline without rewording — REGENERATE it.",
+    "",
+    "── RULE 5c: EXPANDED BANNED-TAG LIST (NEVER USE THESE VERBATIM) ──",
+    "  ✗ Anthemic Energy        ✗ Catchy Hook Energy   ✗ Emotional Peak       ✗ Powerful Performance",
+    "  ✗ Smooth & Melodic       ✗ High Energy          ✗ Vibey Mood           ✗ Confident Rhythm",
+    "  ✗ Soft & Reflective      ✗ Energetic Vibe       ✗ Uplifting Mood       ✗ Chill Vibe",
+    "  ✗ Hype Energy            ✗ Romantic Mood        ✗ Sad Reflection       ✗ Party Energy",
+    "  ✗ Generic Pain           ✗ Generic Joy          ✗ Generic Spiritual    ✗ Generic Love",
+    "Any tag on this list — even with a small twist — is a failed generation. Replace.",
+    "",
+    "── RULE 6: HUMAN, CREATIVE OUTPUT FORMAT ──",
+    "Tags must feel HUMAN and CREATIVE, like a music director's notes — NOT robotic combinations.",
+    "Examples of the emotional quality expected (generate originals, do not copy):",
+    "  ✓ \"Street Choir Explosion\"      ✓ \"Painful Hustle Reflection\"",
+    "  ✓ \"Spiritual Chant Rise\"         ✓ \"Gritty Survival Energy\"",
+    "  ✓ \"Victory Through Struggle\"     ✓ \"Wounded Confidence\"",
+    "  ✓ \"Late-Night Confession\"        ✓ \"Crowd Echo Anthem\"",
+    ...chantBlock,
+    "",
+    "── RULE 7: OUTPUT TRACE (REQUIRED IN JSON) ──",
+    "Populate the `dynamicEmotionTags` field in the JSON output with per-section tag arrays:",
+    "  {",
+    "    intro:   [\"tag1\", \"tag2\"],",
+    "    verse1:  [\"tag1\", \"tag2\"],",
+    "    hook1:   [\"tag1\", \"tag2\"],",
+    "    verse2:  [\"tag1\", \"tag2\"],",
+    "    bridge:  [\"tag1\", \"tag2\"],",
+    "    hook2:   [\"tag1\", \"tag2\"],",
+    "    hook3:   [\"tag1\", \"tag2\"],",
+    "    outro:   [\"tag1\", \"tag2\"]",
+    "  }",
+    "Each array is 2–4 ORIGINAL tags specific to THIS song's storyline + artist + section role.",
+    "Leaving this field generic, repeated, or empty is a failed generation.",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V8.1 — ARTIST STYLE OVERRIDE ENGINE (ASOE)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// HARD override layer. When an artist reference is present this engine
+// overrides default lyric behavior — disables generic patterns, disables
+// long narrative sentence structure, replaces with artist-driven
+// chant / call-and-response / repetition-first writing.
+//
+// Specialized Asake mode forces 3–6 word lines, heavy repetition,
+// crowd/choir presence, percussive vocal flow, and Yoruba-influenced
+// rhythm even when written in English. Other artists get inferred
+// override rules from genre + mood + reference cues.
+//
+// FAILURE CONDITION: if output doesn't sound chantable, lacks
+// repetition, or lacks call-and-response — auto-regenerate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OverrideProfile {
+  modeName: string;
+  isHardChant: boolean;
+  lineLength: string;
+  repetitionPolicy: string;
+  rhythmRoot: string;
+  crowdPolicy: string;
+  forbiddenWritingHabits: string[];
+  forcedWritingHabits: string[];
+  callAndResponseRule: string;
+  hookRule: string;
+}
+
+function resolveOverrideProfile(
+  primaryArtist: string,
+  hasChantSignal: boolean,
+  genre: string,
+  mood: string,
+): OverrideProfile {
+  const a = primaryArtist.toLowerCase();
+  const g = genre.toLowerCase();
+  const m = mood.toLowerCase();
+
+  // ── ASAKE-TYPE (mandatory hard chant mode) ─────────────────────────────
+  if (a.includes("asake") || /\bfuji\b|\bamapiano\b.*chant|street choir/.test(a)) {
+    return {
+      modeName: "ASAKE-TYPE (HARD CHANT OVERRIDE)",
+      isHardChant: true,
+      lineLength: "3–6 words MAX per line. Break long ideas into multiple short lines.",
+      repetitionPolicy: "Heavy. Anchor phrases must repeat 3–5x with micro-variations.",
+      rhythmRoot: "Yoruba-influenced rhythm even when lyrics are in English. Words land on the drum.",
+      crowdPolicy: "Group/choir presence in EVERY chorus. Background vocals echo lead lines.",
+      forbiddenWritingHabits: [
+        "long narrative sentences",
+        "clean grammar-heavy lines",
+        "polished pop phrasing",
+        "abstract storytelling without rhythm",
+      ],
+      forcedWritingHabits: [
+        "broken phrasing (rhythm-first, grammar-second)",
+        "percussive vocal flow (lyrics feel like drums)",
+        "chant-driven writing instead of storytelling",
+        "extreme repetition designed for crowd participation",
+      ],
+      callAndResponseRule:
+        "MANDATORY in every chorus. Format: lead line + crowd response in (parentheses).",
+      hookRule:
+        "Hook must be chantable on first listen. If a stranger can't sing it back after one play → REGENERATE.",
+    };
+  }
+
+  // ── Other chant-signal artists / genres (soft chant override) ──────────
+  if (hasChantSignal || /gospel|worship|fuji|highlife|amapiano/.test(g) || /spiritual|prayer|chant/.test(m)) {
+    return {
+      modeName: "CHANT-FORWARD OVERRIDE",
+      isHardChant: true,
+      lineLength: "4–8 words per line. Lean short. Long lines only when emotionally earned.",
+      repetitionPolicy: "Strong. Every chorus has a repeating anchor phrase the crowd can latch onto.",
+      rhythmRoot: "Match the genre's call-and-response heritage; words must sit on the rhythmic grid.",
+      crowdPolicy: "Crowd / choir presence in chorus and at least one verse moment.",
+      forbiddenWritingHabits: [
+        "verbose verse storytelling that delays the hook",
+        "polished radio-pop phrasing",
+        "abstract metaphor stacks",
+      ],
+      forcedWritingHabits: [
+        "broken, percussive line construction",
+        "rhythm-first writing — grammar yields to feel",
+        "repetition as the primary memorability device",
+      ],
+      callAndResponseRule:
+        "MANDATORY in chorus. Format: lead line + crowd response in (parentheses).",
+      hookRule: "Hook must be repeatable AND chantable. If not chantable → REGENERATE.",
+    };
+  }
+
+  // ── BURNA-type / Afro-Fusion override (groove-forward, not chant) ──────
+  if (a.includes("burna")) {
+    return {
+      modeName: "BURNA-TYPE OVERRIDE (GROOVE-FORWARD)",
+      isHardChant: false,
+      lineLength: "Mixed. Verses: 6–10 words. Hook: 4–7 words for chantability.",
+      repetitionPolicy: "Moderate. Hook anchor phrase repeats; verses vary.",
+      rhythmRoot: "Afro-fusion pocket. Lyrics groove with the bassline, not against it.",
+      crowdPolicy: "Optional crowd ad-libs in hook climax; no choir-style stacking.",
+      forbiddenWritingHabits: ["over-rapped wordplay", "EDM-style chanting that erases melody"],
+      forcedWritingHabits: ["confident global swagger", "layered melodic emotion", "specific cultural detail"],
+      callAndResponseRule: "Optional — use sparingly when the hook earns it.",
+      hookRule: "Hook must be melodic AND repeatable. Memorable melody beats chantability here.",
+    };
+  }
+
+  // ── WIZKID-type override (smooth minimalism) ───────────────────────────
+  if (a.includes("wizkid") || a.includes("starboy")) {
+    return {
+      modeName: "WIZKID-TYPE OVERRIDE (SMOOTH MINIMAL)",
+      isHardChant: false,
+      lineLength: "Short to medium. Leave space — silence is part of the lyric.",
+      repetitionPolicy: "Light. One simple anchor phrase repeats; verses stay restrained.",
+      rhythmRoot: "Calm groove. Lyrics float on the pocket rather than driving it.",
+      crowdPolicy: "Minimal. Solo-vocal feel with restrained background harmonies.",
+      forbiddenWritingHabits: ["over-stuffed verses", "shouty hooks", "dense wordplay"],
+      forcedWritingHabits: ["effortless cool", "simple emotional truth", "negative space"],
+      callAndResponseRule: "Rarely. Only if the song's energy genuinely earns a crowd moment.",
+      hookRule: "Hook must feel inevitable and effortless. If it sounds 'tried hard' → REGENERATE.",
+    };
+  }
+
+  // ── Default override when an artist IS present but not in the table ────
+  return {
+    modeName: "GENERAL ARTIST OVERRIDE",
+    isHardChant: false,
+    lineLength: "Match the implied artist's typical line length — infer from genre + mood + name cues.",
+    repetitionPolicy: "Moderate. Hook has a repeatable anchor; verses vary.",
+    rhythmRoot: "Match the genre's rhythmic root. Words must sit in the pocket.",
+    crowdPolicy: "Use crowd / background vocals only if the artist's lane supports it.",
+    forbiddenWritingHabits: ["generic AfroMuse-default phrasing", "story-first writing that ignores the artist's vibe"],
+    forcedWritingHabits: ["artist-authentic delivery posture", "rhythm-aware line construction"],
+    callAndResponseRule: "Use only when the artist's lane (chant / hype / gospel) calls for it.",
+    hookRule: "Hook must feel like THIS artist, not a generic Afrobeats default.",
+  };
+}
+
+export function getArtistStyleOverrideBlock(
+  artistInspiration: string | undefined,
+  styleReference: string | undefined,
+  genre: string,
+  mood: string,
+): string[] {
+  const parsed = parseArtistInputs(artistInspiration, styleReference);
+  if (parsed.raw.length === 0) return [];
+
+  const primary = parsed.primary ?? parsed.raw[0];
+  const profile = resolveOverrideProfile(primary, parsed.hasChantSignal, genre, mood);
+
+  const sectionBehavior = profile.isHardChant
+    ? [
+        "── SECTION BEHAVIOR (CHANT MODE) ──",
+        "Song STRUCTURE stays the same (Intro / Verse / Chorus / Bridge / Outro).",
+        "But each section's BEHAVIOR is rewritten by the override:",
+        "",
+        "  INTRO   — hyping / crowd call. Minimal words. Repeated phrases. Sets the chant lane.",
+        "  CHORUS  — DOMINANT chant. Call-and-response format. Extreme repetition. Crowd-ready.",
+        "  VERSES  — Rhythmic blocks (NOT long sentences). Broken phrasing. Energy > storytelling.",
+        "  BRIDGE  — Spiritual / emotional chant. Slower but still repetitive.",
+        "  OUTRO   — Crowd echo / chant fade. The lead steps back, the room finishes the line.",
+      ]
+    : [
+        "── SECTION BEHAVIOR (ARTIST OVERRIDE) ──",
+        "Song STRUCTURE stays the same. Section behavior is rewritten to match the artist's lane:",
+        "",
+        "  INTRO   — Set the artist's signature mood in 2–4 lines.",
+        "  CHORUS  — Repeatable anchor phrase. Match the artist's hook personality.",
+        "  VERSES  — Match the artist's typical verse density and cadence.",
+        "  BRIDGE  — Match how this artist typically pivots emotionally.",
+        "  OUTRO   — Match the artist's typical resolution / fade behavior.",
+      ];
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🛡️ ARTIST STYLE OVERRIDE ENGINE — ASOE",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    `OVERRIDE MODE: ${profile.modeName}`,
+    `Primary artist reference: ${primary}`,
+    parsed.secondary ? `Secondary flavor: ${parsed.secondary}` : "",
+    "",
+    "── HARD OVERRIDE RULES ──",
+    "When an artist reference is present, the following defaults are DISABLED for this generation:",
+    "  ✗ Generic lyric generation patterns",
+    "  ✗ Default emotional tags (handled by DET / DETE engine)",
+    "  ✗ Long narrative sentence structure (unless the artist's lane calls for it)",
+    "These are REPLACED with artist-driven structure as defined below.",
+    "",
+    "── WRITING CONTRACT ──",
+    `  • Line length:           ${profile.lineLength}`,
+    `  • Repetition policy:     ${profile.repetitionPolicy}`,
+    `  • Rhythm root:           ${profile.rhythmRoot}`,
+    `  • Crowd / choir policy:  ${profile.crowdPolicy}`,
+    `  • Hook rule:             ${profile.hookRule}`,
+    `  • Call & response rule:  ${profile.callAndResponseRule}`,
+    "",
+    "  FORBIDDEN writing habits (do NOT use):",
+    ...profile.forbiddenWritingHabits.map((h) => `    ✗ ${h}`),
+    "",
+    "  FORCED writing habits (MUST use):",
+    ...profile.forcedWritingHabits.map((h) => `    ✓ ${h}`),
+    "",
+    ...sectionBehavior,
+    "",
+    "── CALL & RESPONSE FORMAT (when active) ──",
+    "Write the leader line on its own line. Put the crowd response on the next line in (parentheses).",
+    "Example pattern (do NOT copy literally — generate originals in this shape):",
+    "  Pain no go kill me",
+    "  (No go kill me!)",
+    "  We dey rise again",
+    "  (Rise again!)",
+    "",
+    "── HOOK ENFORCEMENT ──",
+    "Before finalizing, internally test the hook against this checklist:",
+    "  1. Can a stranger sing it back after ONE listen?",
+    "  2. Does it work with crowd response (call & response or echo)?",
+    "  3. Does it sit on the rhythmic pocket of the genre?",
+    "If any answer is NO → rewrite the hook before submitting. Do NOT ship a non-chantable hook in chant mode.",
+    "",
+    "── PRIORITY STACK (THIS ENGINE'S PLACE) ──",
+    "  1. Artist Style (THIS engine — HIGHEST)",
+    "  2. Emotion (DET / DETE)",
+    "  3. Performance behavior (chant flow, repetition density)",
+    "  4. Story (LOWEST — story serves the artist, never overrides it)",
+    "",
+    "── FAILURE CONDITION ──",
+    profile.isHardChant
+      ? "If the output doesn't sound like a chant, lacks repetition, or lacks call-and-response → mark `failureChecks.regenerate=true` in the JSON output and rewrite the chorus + verses before final submission."
+      : "If the output doesn't feel authentic to this artist's lane → mark `failureChecks.regenerate=true` in the JSON output and rewrite before final submission.",
+    "",
+    "── OUTPUT TRACE (REQUIRED IN JSON) ──",
+    "Populate `artistStyleOverride` in the JSON output with what this engine enforced:",
+    "  { active: true, mode, primaryArtist, isHardChant, enforcedBehaviors: [], lineLengthBudget }",
+  ].filter((line) => line !== "");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V8.1 — UNIFIED CORE (ALIC)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Meta-priority frame that sits ABOVE every other lyric engine and locks
+// in the rules that ASOE + ASTE + DETE / DET + Vocal Flow + Hook + Adlib
+// + Call-and-Response all serve. ALIC is the constitution; the others
+// are the laws. When two engines conflict, ALIC's priority stack wins.
+//
+// ALIC also adds the four cross-cutting subsystems that are too small
+// to deserve their own engine but too important to leave implicit:
+//   - Vocal Flow Engine  (chant / smooth / broken / percussive)
+//   - Hook Engine        (memorability + chantability gate)
+//   - Adlib Intelligence (per-emotion adlib palette)
+//   - Call & Response    (when active, how it's formatted)
+//
+// FAILURE DETECTION: if output uses generic tags, sounds like normal
+// storytelling when artist requires chant, has a weak hook, or lacks
+// emotional variation — mark for regeneration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getAfromuseLyricsIntelligenceCoreBlock(
+  artistInspiration: string | undefined,
+  styleReference: string | undefined,
+  mood: string,
+  genre: string,
+): string[] {
+  const parsed = parseArtistInputs(artistInspiration, styleReference);
+  const hasArtist = parsed.raw.length > 0;
+  const m = mood.toLowerCase();
+  const g = genre.toLowerCase();
+
+  // Resolve a default Vocal Flow direction the model can lock onto.
+  let defaultFlow = "Smooth Flow — connected phrasing, melodic pocket";
+  if (parsed.hasChantSignal || /gospel|fuji|amapiano|highlife/.test(g)) {
+    defaultFlow = "Chant Flow — repetitive, rhythmic, crowd-ready";
+  } else if (/aggressive|gritty|raw|hard|trench|trap|drill/.test(m + " " + g)) {
+    defaultFlow = "Percussive Flow — rhythm-first, words land like drums";
+  } else if (/melancholic|sad|reflective|heartbreak/.test(m)) {
+    defaultFlow = "Broken Flow — staggered delivery, breath in the gaps";
+  }
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🧠 AFROMUSE LYRICS INTELLIGENCE CORE — ALIC",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    "You are not writing a song on a page. You are a live performer leading a crowd.",
+    "Every line is a performance decision, not a literary decision. Behave accordingly.",
+    "",
+    "── 1. PRIORITY STACK (LOCKED — DO NOT REORDER) ──",
+    "When two engines conflict, the one HIGHER on this list wins:",
+    "  1. Artist Style       (ASOE — hard override when artist reference present)",
+    "  2. Emotion            (DET / DETE — section-aware, behavior-driven tags)",
+    "  3. Performance behavior (chant / flow / repetition density)",
+    "  4. Story              (LAST — story serves the song, never the other way around)",
+    "",
+    "If the storyline pulls toward long narrative but the artist requires chant,",
+    "the artist wins. Compress the story into chant-able fragments.",
+    "",
+    "── 2. EMOTION → WRITING CONTROL (TAG-DRIVEN BEHAVIOR) ──",
+    "Each emotion tag generated by DET is a BEHAVIORAL CONTROL — it controls",
+    "line length, repetition, vocabulary, and vocal delivery. Examples:",
+    "",
+    "  PAIN CHANT          → short lines · high repetition · simple emotional words · echo phrasing",
+    "  HYPE / CONFIDENT    → punchy lines · call & response · crowd adlibs · less repetition, more statements",
+    "  SPIRITUAL WAVE      → slower phrases · reflective vocabulary · chant-like delivery · breath in gaps",
+    "  STREET SURVIVAL     → concrete street imagery · clipped lines · no abstract metaphor",
+    "  BROKEN LOVE ECHO    → fragmented sentences · pause-heavy · sense memory · no flex vocabulary",
+    "",
+    "If the section's emotion tag is `Pain Chant (Street Choir)` then verse lines",
+    "must actually BE short, repeated, simple, and echo-shaped. Not just labeled that way.",
+    "",
+    "── 3. ARTIST-AWARE TAG ADAPTATION ──",
+    hasArtist
+      ? `Artist reference detected: ${parsed.raw.join(" + ")}. DET tags must be adapted to this artist's lane:`
+      : "No artist reference. Use AfroMuse's balanced default lane for tag adaptation.",
+    "  • Asake-type     → Pain Chant becomes \"Pain Chant (Street Choir)\"; Confidence becomes \"Street Hype Bounce\"; Spiritual becomes \"Prayer Chant Wave\".",
+    "  • Burna-type     → Pain becomes \"Layered Pain Groove\"; Confidence becomes \"Confident Global Swagger\".",
+    "  • Wizkid-type    → Pain becomes \"Quiet Pain Float\"; Confidence becomes \"Effortless Cool\".",
+    "  • Unknown artist → Adapt by extending the tag with the artist's strongest stylistic cue.",
+    "",
+    "── 4. VOCAL FLOW ENGINE (PER SECTION) ──",
+    "Each section must lock to ONE flow type. Mixing flows mid-section breaks the spell.",
+    "  • CHANT FLOW       — repetitive, rhythmic, crowd-ready",
+    "  • SMOOTH FLOW      — connected phrasing, melodic pocket",
+    "  • BROKEN FLOW      — staggered delivery, intentional pauses",
+    "  • PERCUSSIVE FLOW  — rhythm-first, words land like drums",
+    "",
+    `Default flow for this generation: ${defaultFlow}`,
+    "Override the default per section if the emotion tag demands it. Trace your choice in JSON.",
+    "",
+    "── 5. HOOK ENGINE (MEMORABILITY GATE) ──",
+    "The chorus / hook MUST clear all four gates before submission:",
+    "  ☐ Repeatable    — uses an anchor phrase that comes back",
+    "  ☐ Chantable     — a stranger can sing it back after ONE listen",
+    "  ☐ Simple        — vocabulary a 12-year-old could repeat",
+    "  ☐ Emotionally dominant — the hook is the song's emotional peak, not a filler",
+    "If the hook fails any gate → REGENERATE the hook. Do not ship a weak chorus.",
+    "",
+    "── 6. ADLIB INTELLIGENCE (PER EMOTION) ──",
+    "Adlibs must MATCH the section's emotion tag. Suggested palettes (do NOT exhaust — pick 1–3):",
+    "  PAIN        → (cry), (ahh), (why), (oh Lord), (mmm)",
+    "  HYPE        → (hey!), (go!), (run am!), (shout!), (woo!)",
+    "  SPIRITUAL   → (amen), (jah), (pray), (halle), (rise)",
+    "  STREET      → (oya!), (gbera!), (move!), (eh!)",
+    "  ROMANTIC    → (baby), (mmm), (oh), (yeah)",
+    "Place adlibs strategically — end of phrases, hook climax, between leader/response calls.",
+    "",
+    "── 7. CALL & RESPONSE CONTROL ──",
+    "When ASOE is in chant mode OR the section's emotion tag is hype/chant/spiritual:",
+    "  Format: leader line, then crowd response on the next line in (parentheses).",
+    "  Example shape (generate originals — do NOT copy literally):",
+    "    I no go fall",
+    "    (I no go fall!)",
+    "Trace each leader/crowd pair in the JSON `callAndResponse` array.",
+    "",
+    "── 8. EMOTIONAL PROGRESSION RULE ──",
+    "Song must EVOLVE emotionally — never plateau:",
+    "  Intro   → entry vibe / curiosity / scene-set",
+    "  Verse   → build / story or rhythm setup",
+    "  Chorus  → peak emotion (or chant climax in chant mode)",
+    "  Bridge  → shift (spiritual / breakdown / reflection)",
+    "  Outro   → resolution or fade",
+    "Each section must FEEL different from the last. No two sections should land at the same emotional height.",
+    "",
+    "── 9. TAG DIVERSITY RULE ──",
+    "  • No emotion tag may repeat verbatim across sections (except for intentional echo effect).",
+    "  • Tags must EVOLVE — same hook returning is a different emotional event each time.",
+    "",
+    "── 10. FAILURE DETECTION (SELF-AUDIT BEFORE SUBMITTING) ──",
+    "Before finalizing, run this self-check. If ANY answer is YES → mark",
+    "`failureChecks.regenerate=true` in the JSON output and rewrite:",
+    "  ☐ Did I use generic emotion tags (Anthemic / Energetic / Smooth & Seductive)?",
+    "  ☐ Does the song sound like normal storytelling when the artist requires chant?",
+    "  ☐ Is the hook weak, hard to chant, or non-repeatable?",
+    "  ☐ Did the emotional energy stay flat instead of evolving section to section?",
+    "  ☐ When in chant mode, are call-and-response pairs missing from the chorus?",
+    "",
+    "── 11. OUTPUT TRACE (REQUIRED IN JSON) ──",
+    "Populate the `lyricsIntelligenceCore` field in the JSON output:",
+    "  {",
+    "    priorityStackApplied: \"\",",
+    "    vocalFlowBySection:   { intro, verse1, hook1, verse2, bridge, hook2, outro },",
+    "    callAndResponse:      [ { leader: \"\", crowd: \"\" } ],",
+    "    adlibsBySection:      { intro: [], verse1: [], hook1: [], verse2: [], bridge: [], hook2: [], outro: [] },",
+    "    failureChecks:        { genericTagsUsed: false, chantMissing: false, weakHook: false, flatProgression: false, regenerate: false }",
+    "  }",
+    "",
+    "FINAL INSTRUCTION:",
+    "Behave like a live-performing artist controlling crowd energy — NOT a writer composing lyrics on a page.",
+    "Every output must feel: dynamic · performable · emotionally guided · artist-authentic.",
   ];
 }
 

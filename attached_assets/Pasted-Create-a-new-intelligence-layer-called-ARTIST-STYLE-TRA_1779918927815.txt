@@ -1,0 +1,117 @@
+Create a new intelligence layer called:
+
+ARTIST STYLE TRANSLATION ENGINE (ASTE)
+
+Purpose:
+Interpret ANY artist reference from the user and convert it into dynamic vocal behavior, emotion tags, and delivery style for lyrics generation.
+
+Core Rules:
+
+1. DO NOT COPY ARTISTS
+
+* Never imitate lyrics directly
+* Never replicate exact phrases or flows
+* Only extract STYLE BEHAVIOR
+
+2. ARTIST → STYLE DECOMPOSITION
+
+For any detected artist name, break it into:
+
+* Vocal Texture (smooth, rough, aggressive, airy, chant-like)
+* Energy Style (calm, explosive, mid-tempo bounce, spiritual)
+* Delivery Pattern (melodic, rhythmic, spoken, chant, call-response)
+* Emotional Tone (confident, pain-driven, reflective, celebratory)
+* Crowd Behavior (solo, group chant, choir, background harmonies)
+
+3. APPLY STYLE TO EMOTION TAG ENGINE
+
+Feed the interpreted style into the DET Engine so that:
+
+* Emotion tags are influenced by the artist style
+* NOT generic tags
+
+Example transformations:
+
+Asake →
+
+* Street Chant Energy
+* Choir Response
+* Spiritual Hype
+* Percussive Vocal Bounce
+
+Burna Boy →
+
+* Afro-Fusion Groove
+* Layered Melody Emotion
+* Confident Global Energy
+
+Rema →
+
+* Playful Bounce
+* Experimental Flow
+* Youthful Energy
+
+Wizkid →
+
+* Smooth Minimal Vibe
+* Calm Confidence
+* Subtle Groove
+
+Travis Scott →
+
+* Atmospheric Energy
+* Psychedelic Flow
+* Reverb-Heavy Delivery
+
+4. MULTI-ARTIST BLENDING
+
+If user inputs multiple artists:
+Example: "Asake + Burna Boy"
+
+The system must:
+
+* Blend styles intelligently
+* NOT pick only one
+
+Output example:
+
+* Chant + Melody fusion
+* Choir energy + smooth vocal layering
+
+5. PRIORITY LOGIC
+
+If conflict exists:
+
+* Primary artist = dominant behavior
+* Secondary artist = flavor layer
+
+6. STYLE INFLUENCES EVERYTHING
+
+The interpreted artist style must affect:
+
+* Emotion Tags
+* Chorus Style
+* Verse Delivery
+* Adlibs
+* Hook Structure
+
+7. NO HARDCODED ARTIST LIST
+
+System must generalize:
+Even unknown artists → infer style based on:
+
+* Genre
+* Name context
+* User description
+
+8. OUTPUT EFFECT
+
+After this layer:
+Lyrics must FEEL like:
+
+* “Inspired by” the artist
+  NOT
+* “Generated randomly with tags”
+
+Final Instruction:
+The model must behave like a music producer who understands artist identity and translates it into vocal direction, not a template system.

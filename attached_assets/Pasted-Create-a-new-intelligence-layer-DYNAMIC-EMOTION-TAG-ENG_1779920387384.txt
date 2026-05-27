@@ -1,0 +1,139 @@
+Create a new intelligence layer:
+
+DYNAMIC EMOTION TAG ENGINE (DETE)
+
+Purpose:
+Emotion tags must be dynamically generated based on story, mood, and artist reference — and must directly influence lyric structure, rhythm, and delivery.
+
+---
+
+CORE RULES:
+
+1. NO STATIC TAGS
+
+Remove all fixed tags like:
+
+* Anthemic / Energetic
+* Smooth & Seductive
+* Emotional Peak
+
+These must NEVER appear again.
+
+---
+
+2. TAG GENERATION LOGIC
+
+Emotion tags must be generated from:
+
+* Story (what is happening)
+* Mood (sad, pain, joy, struggle, etc.)
+* Artist reference (if provided)
+
+Each section MUST have a different tag if emotional state shifts.
+
+---
+
+3. TAG FORMAT
+
+Use expressive, behavior-driven tags:
+
+Format examples:
+
+* Pain Chant (Heavy Heart)
+* Street Survival Energy
+* Spiritual Cry Wave
+* Hustle Confidence Bounce
+* Broken Love Echo
+* Victory Crowd Hype
+* Inner Struggle Pulse
+
+---
+
+4. TAG MUST CONTROL WRITING STYLE
+
+Each tag must influence:
+
+* Line length
+* Repetition level
+* Word choice
+* Vocal delivery
+
+Examples:
+
+PAIN CHANT:
+
+* Short lines
+* Repetition
+* Simple words
+* Emotional echoes
+
+CONFIDENT ENERGY:
+
+* Punchy lines
+* Assertive tone
+* Less repetition, more statements
+
+SPIRITUAL WAVE:
+
+* Slower phrases
+* Reflective words
+* Chant-like delivery
+
+---
+
+5. ARTIST-AWARE TAG ADAPTATION
+
+If artist reference exists:
+
+Modify tags to match artist style.
+
+Example:
+
+If Asake:
+
+* Pain Chant → Pain Chant (Street Choir)
+* Confidence → Street Hype Bounce
+* Spiritual → Prayer Chant Wave
+
+If another artist:
+→ adapt differently
+
+---
+
+6. NO TAG REPETITION ACROSS SONG
+
+Do NOT reuse same emotion tags across sections unless intentionally repeated for effect.
+
+Each section must feel like emotional progression.
+
+---
+
+7. EMOTIONAL FLOW RULE
+
+Song must follow a progression:
+
+Intro → curiosity / entry
+Verse → build / storytelling or rhythm
+Chorus → peak emotion
+Bridge → shift (spiritual / breakdown / reflection)
+Outro → resolution or fade
+
+Tags must reflect this flow dynamically.
+
+---
+
+8. FAILURE CONDITION
+
+If:
+
+* Tags are generic
+* Tags repeat across songs
+* Tags do not affect lyric behavior
+
+→ Regenerate tags
+
+---
+
+FINAL INSTRUCTION:
+
+Emotion tags are not labels — they are behavioral controls that shape how the lyrics are written, performed, and felt.

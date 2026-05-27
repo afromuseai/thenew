@@ -1,0 +1,204 @@
+Create a unified intelligence system called:
+
+AFROMUSE LYRICS INTELLIGENCE CORE (ALIC)
+
+Purpose:
+To dynamically control lyric generation using emotion, artist reference, and performance behavior — ensuring every song feels unique, expressive, and artist-authentic.
+
+---
+
+### 1. CORE PRIORITY STACK (VERY IMPORTANT)
+
+Generation must follow this order:
+
+1. Artist Style (if provided)
+2. Emotion (dynamic per section)
+3. Performance Behavior (chant, flow, repetition)
+4. Story (last priority)
+
+Story must NEVER override artist style or emotional behavior.
+
+---
+
+### 2. ARTIST STYLE OVERRIDE ENGINE (ASOE)
+
+If artist reference is present:
+
+* Override default lyric behavior
+* Force writing style, rhythm, and delivery to match artist identity
+
+Example (Asake mode):
+
+* Chant-driven lyrics
+* Heavy repetition
+* Call & response structure
+* Short, percussive lines
+* Crowd/choir energy
+* Broken phrasing (not long sentences)
+
+If no artist is provided:
+→ Default to balanced AfroMuse style
+
+---
+
+### 3. DYNAMIC EMOTION TAG ENGINE (DETE)
+
+Each section MUST generate a unique emotion tag based on:
+
+* Story
+* Mood
+* Artist reference
+
+Rules:
+
+* No generic tags (e.g. “Anthemic”, “Energetic”)
+* Tags must be expressive and specific
+
+Format examples:
+
+* Pain Chant (Street Choir)
+* Hustle Fire (Crowd Bounce)
+* Spiritual Cry (Echo Wave)
+* Victory Pulse (Arena Chant)
+
+---
+
+### 4. EMOTION → WRITING CONTROL
+
+Each emotion tag MUST influence:
+
+* Line length
+* Repetition level
+* Vocabulary
+* Vocal delivery style
+
+Examples:
+
+Pain Chant:
+
+* Short lines
+* High repetition
+* Simple emotional words
+* Echo-style phrasing
+
+Hype Energy:
+
+* Punchy lines
+* Call & response
+* Crowd adlibs
+
+Spiritual:
+
+* Slower rhythm
+* Reflective tone
+* Chant-like phrasing
+
+---
+
+### 5. VOCAL FLOW ENGINE
+
+Each section must adapt flow based on emotion:
+
+* Chant Flow → repetitive, rhythmic
+* Smooth Flow → connected phrasing
+* Broken Flow → staggered delivery
+* Percussive Flow → rhythm-first delivery
+
+Flow MUST match emotion + artist
+
+---
+
+### 6. HOOK ENGINE (MEMORABILITY LAYER)
+
+Chorus must:
+
+* Be repeatable
+* Be chantable
+* Be simple
+* Be emotionally dominant
+
+If hook is too complex:
+→ regenerate
+
+---
+
+### 7. ADLIB INTELLIGENCE SYSTEM
+
+Adlibs must match emotion:
+
+Pain:
+
+* (cry), (ahh), (why), (oh Lord)
+
+Hype:
+
+* (hey!), (go!), (run am!), (shout!)
+
+Spiritual:
+
+* (amen), (jah), (pray), (halle)
+
+Also support:
+→ Call & Response format
+
+---
+
+### 8. CALL & RESPONSE CONTROL
+
+When chant or hype energy is detected:
+
+Force:
+Leader line
++
+Crowd response in brackets
+
+Example:
+I no go fall
+(I no go fall!)
+
+---
+
+### 9. EMOTIONAL PROGRESSION RULE
+
+Song must evolve emotionally:
+
+Intro → entry vibe
+Verse → build
+Chorus → peak
+Bridge → shift
+Outro → resolution
+
+Each section must feel different.
+
+---
+
+### 10. TAG DIVERSITY RULE
+
+* No repeating same emotion tags across sections
+* Tags must evolve with the song
+
+---
+
+### 11. FAILURE DETECTION
+
+If output:
+
+* Uses generic emotion tags
+* Sounds like normal storytelling when artist requires chant
+* Has weak or non-repeatable hook
+* Lacks emotional variation
+
+→ Regenerate automatically
+
+---
+
+### FINAL INSTRUCTION:
+
+The system must behave like a live-performing artist controlling crowd energy, not a writer composing lyrics.
+
+Every output must feel:
+
+* Dynamic
+* Performable
+* Emotionally guided
+* Artist-authentic

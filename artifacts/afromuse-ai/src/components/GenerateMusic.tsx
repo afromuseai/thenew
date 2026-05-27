@@ -725,7 +725,7 @@ async function handleGenerate(e: React.FormEvent) {
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               <Tag>{engineResult.spec.genre}</Tag>
               <Tag>Key: {engineResult.spec.key_scale}</Tag>
-              <Tag>{engineResult.spec.bpm} BPM</Tag>
+              <Tag>{String(engineResult.spec.bpm).replace(/\s*b\.?p\.?m\.?\s*$/i, "").trim()} BPM</Tag>
               {engineResult.spec.mood && <Tag>Mood: {engineResult.spec.mood}</Tag>}
               <Tag>{engineResult.spec.duration}s</Tag>
             </div>
