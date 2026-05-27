@@ -1802,6 +1802,18 @@ interface SongDraft {
 interface ValidationResult {
   valid: boolean;
   failures: string[];
+  /**
+   * Soft-quality issues that don't break the schema but indicate the model
+   * drifted (model-prefix leaks, empty lines, refusals, missing keeper line,
+   * etc.). Used as a tie-breaker when picking between competing drafts.
+   */
+  softIssues?: string[];
+  /**
+   * 0–1000 quality score — higher is better. Combines structural validity,
+   * soft-issue count, and presence of the intelligence-layer signals
+   * (keeper line, all sections populated, no leaked instructions).
+   */
+  qualityScore?: number;
 }
 
 function validateStructure(draft: SongDraft, profile: DiversityProfile): ValidationResult {
@@ -1828,15 +1840,133 @@ function validateStructure(draft: SongDraft, profile: DiversityProfile): Validat
   return { valid: failures.length === 0, failures };
 }
 
-// ─── Models ───────────────────────────────────────────────────────────────────
-// Nemotron-70B:      primary lyrics model (70B, best at dense instruction-following + dialect purity)
-// Llama-4-Maverick:  lyrics fallback (if Nemotron fails) + flow backup
-// Llama-3.3-70B:     primary flow / production details (metadata, stems, guidance, notes)
+/**
+ * Deep lyrics check — runs AFTER structural validation passes.
+ *
+ * Catches the subtle ways an LLM can produce a "valid-looking" draft that
+ * still violates the intelligence layers we asked it to honor. Every issue
+ * here costs quality-score points; a model with zero deep issues wins the
+ * head-to-head against a model that left meta artifacts in the lyric lines.
+ *
+ * Specifically guards against:
+ *   - Model refusal / safety canned responses ("I cannot", "As an AI")
+ *   - Bracketed instruction leaks inside lyric lines ("(Note:", "[Verse 1]")
+ *   - Empty / whitespace-only lines that would silence vocals
+ *   - Missing or non-string keeper line (intelligence layer signal)
+ *   - Markdown artifacts (asterisks, code fences) leaking into lyrics
+ *   - Lines that are obviously meta ("Translation:", "Explanation:")
+ */
+function deepCheckLyrics(draft: SongDraft): { issues: string[] } {
+  const issues: string[] = [];
+  const sections: SectionKey[] = ["intro", "hook", "verse1", "verse2", "bridge", "outro"];
 
-const NEMOTRON_LYRICS_MODEL  = { id: "nvidia/llama-3.1-nemotron-70b-instruct",  name: "Nemotron-70B",     temperature: 0.90 };
-const MAVERICK_LYRICS_BACKUP = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.92 };
-const LLAMA_70B_FLOW_MODEL   = { id: "meta/llama-3.3-70b-instruct",             name: "Llama-3.3-70B",    temperature: 0.80 };
-const MAVERICK_FLOW_BACKUP   = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.78 };
+  // Refusal / safety / meta phrases the model occasionally emits when the
+  // prompt confuses it. Any of these inside a lyric line means a re-roll.
+  const REFUSAL_PHRASES = [
+    /\bas an ai\b/i,
+    /\bi cannot\b/i,
+    /\bi can'?t\b/i,
+    /\bi'?m not able\b/i,
+    /\bi apologi[sz]e\b/i,
+    /\bcontent policy\b/i,
+  ];
+  const META_PREFIXES = [
+    /^\s*\(?\s*(note|translation|explanation|context|meaning|reasoning|disclaimer)\s*[:：-]/i,
+    /^\s*\[\s*(verse|chorus|hook|intro|outro|bridge|break)\b[^\]]*\]\s*$/i, // a [Section] line accidentally inside the lines array
+    /^\s*```/, // code fence leak
+  ];
+  const MARKDOWN_ARTIFACTS = /\*\*|__|`{3}/;
+
+  for (const section of sections) {
+    const value = draft[section];
+    if (!Array.isArray(value)) continue;
+    value.forEach((line, idx) => {
+      if (typeof line !== "string") {
+        issues.push(`${section}[${idx}] is not a string`);
+        return;
+      }
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        issues.push(`${section}[${idx}] is empty`);
+        return;
+      }
+      if (META_PREFIXES.some((re) => re.test(trimmed))) {
+        issues.push(`${section}[${idx}] looks like a meta/instruction leak: "${trimmed.slice(0, 60)}"`);
+      }
+      if (MARKDOWN_ARTIFACTS.test(trimmed)) {
+        issues.push(`${section}[${idx}] contains markdown artifacts`);
+      }
+      if (REFUSAL_PHRASES.some((re) => re.test(trimmed))) {
+        issues.push(`${section}[${idx}] contains a refusal/AI-disclosure phrase`);
+      }
+    });
+  }
+
+  // Intelligence-layer signal: the keeper line is what binds the song's
+  // emotional spine. A draft missing it is a draft the model didn't follow.
+  const keeperLine = (draft as { keeperLine?: unknown }).keeperLine;
+  if (typeof keeperLine !== "string" || keeperLine.trim().length === 0) {
+    issues.push("missing keeperLine — intelligence layer not honored");
+  } else {
+    // The keeper line should appear (substring or fuzzy) inside the chorus
+    // since that's where the hook crystallizes. If it doesn't, the model
+    // generated a keeper but didn't actually use it.
+    const chorusJoined = Array.isArray(draft.hook)
+      ? draft.hook.filter((l) => typeof l === "string").join(" ").toLowerCase()
+      : "";
+    const kl = keeperLine.toLowerCase().slice(0, 24); // first 24 chars is enough for a fuzzy match
+    if (kl && chorusJoined && !chorusJoined.includes(kl)) {
+      issues.push("keeperLine does not appear in the chorus");
+    }
+  }
+
+  // Title sanity — empty/placeholder titles ("Untitled", "Song Title") are a
+  // tell that the model gave up partway through.
+  const title = (draft as { title?: unknown }).title;
+  if (typeof title !== "string" || /^(untitled|song title|placeholder)?$/i.test(title.trim())) {
+    issues.push("missing or placeholder title");
+  }
+
+  return { issues };
+}
+
+/**
+ * Combine structural validation + deep checks into a single 0–1000 quality
+ * score. Higher is better. We use this to pick a winner when multiple models
+ * race in parallel.
+ *
+ * Scoring:
+ *   start at 1000, subtract 100 per structural failure, subtract 25 per soft
+ *   issue, floor at 0. A perfect draft scores 1000.
+ */
+function scoreLyricsDraft(draft: SongDraft, profile: DiversityProfile): ValidationResult {
+  const structural = validateStructure(draft, profile);
+  const deep = deepCheckLyrics(draft);
+  const score = Math.max(
+    0,
+    1000 - structural.failures.length * 100 - deep.issues.length * 25,
+  );
+  return {
+    valid: structural.valid && deep.issues.length === 0,
+    failures: structural.failures,
+    softIssues: deep.issues,
+    qualityScore: score,
+  };
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+// LYRICS — two models race in parallel; the higher quality-score wins.
+//   Qwen3.5-122B:     dense instruction-following, strong at honoring the
+//                     intelligence layers (keeper line, dialect, structure).
+//   Llama-4-Maverick: high-temperature creative co-writer; best at edgy,
+//                     quotable, performance-ready hooks. Acts as both the
+//                     parallel competitor and the strict-retry fallback.
+// FLOW   — Llama-3.3-70B primary, Llama-4-Maverick backup (unchanged).
+
+const QWEN_LYRICS_MODEL      = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",      temperature: 0.88 };
+const MAVERICK_LYRICS_MODEL  = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.92 };
+const LLAMA_70B_FLOW_MODEL   = { id: "meta/llama-3.3-70b-instruct",             name: "Llama-3.3-70B",     temperature: 0.80 };
+const MAVERICK_FLOW_BACKUP   = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.78 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1959,7 +2089,9 @@ router.post("/generate-song", async (req, res) => {
     }
   };
 
-  // ── Call lyrics model (Llama-4-Maverick) ─────────────────────────────────
+  // ── Call a single lyrics model and score its draft ────────────────────────
+  // Returns the parsed draft AND a quality score so the caller can pick the
+  // best of N parallel attempts. A null draft scores 0.
   const callLyricsModel = async (
     model: { id: string; name: string; temperature: number },
     userPrompt: string,
@@ -1977,12 +2109,45 @@ router.post("/generate-song", async (req, res) => {
       });
       const raw  = response.choices[0]?.message?.content ?? "";
       const draft = parseJson(raw) as SongDraft | null;
-      const validation = draft ? validateStructure(draft, diversityProfile) : { valid: false, failures: ["parse error"] };
+      const validation: ValidationResult = draft
+        ? scoreLyricsDraft(draft, diversityProfile)
+        : { valid: false, failures: ["parse error"], softIssues: [], qualityScore: 0 };
       return { model: model.name, draft, validation };
     } catch (err) {
       logger.warn({ model: model.name, err }, "Lyrics model call failed");
-      return { model: model.name, draft: null, validation: { valid: false, failures: ["api error"] } };
+      return {
+        model: model.name,
+        draft: null,
+        validation: { valid: false, failures: ["api error"], softIssues: [], qualityScore: 0 },
+      };
     }
+  };
+
+  /**
+   * Pick the highest-quality draft from a list of attempts.
+   *
+   * Tie-break order:
+   *   1. Highest qualityScore wins (combines structural + deep checks).
+   *   2. If scores tie, prefer the one with fewer hard structural failures.
+   *   3. If still tied, prefer the one with fewer soft issues.
+   *
+   * Drafts that failed to generate (null) are filtered out first so they
+   * never get picked even if every attempt failed (caller handles that case).
+   */
+  const pickBestDraft = (
+    attempts: { model: string; draft: SongDraft | null; validation: ValidationResult }[],
+  ): { model: string; draft: SongDraft | null; validation: ValidationResult } | null => {
+    const valid = attempts.filter((a) => a.draft !== null);
+    if (valid.length === 0) return null;
+    return [...valid].sort((a, b) => {
+      const sa = a.validation.qualityScore ?? 0;
+      const sb = b.validation.qualityScore ?? 0;
+      if (sb !== sa) return sb - sa;
+      if (a.validation.failures.length !== b.validation.failures.length) {
+        return a.validation.failures.length - b.validation.failures.length;
+      }
+      return (a.validation.softIssues?.length ?? 0) - (b.validation.softIssues?.length ?? 0);
+    })[0] ?? null;
   };
 
   // ── Call flow/production model (Llama-3.3-70B primary, Llama-4-Maverick backup) ──
@@ -2040,30 +2205,71 @@ router.post("/generate-song", async (req, res) => {
   try {
     const userPrompt = buildUserPrompt(promptParams, false);
 
-    // ── Round 1 — Maverick primary lyrics generation ───────────────────
-    logger.info("Starting Llama-4-Maverick lyrics generation (round 1)");
-    const result1 = await callLyricsModel(MAVERICK_LYRICS_BACKUP, userPrompt);
+    // ── Round 1 — Qwen and Maverick race in parallel ───────────────────
+    // Both models receive the same intelligence-layer-loaded prompt. We
+    // wait for both, score each draft (structural + deep checks), and
+    // pick the winner. Running them concurrently keeps wall-time roughly
+    // equal to a single model call while doubling the chance of getting a
+    // draft that fully honors the structure + intelligence layers.
+    logger.info(
+      { models: [QWEN_LYRICS_MODEL.name, MAVERICK_LYRICS_MODEL.name] },
+      "Starting parallel lyrics race (round 1)",
+    );
+    const [qwenResult, maverickResult] = await Promise.all([
+      callLyricsModel(QWEN_LYRICS_MODEL,     userPrompt),
+      callLyricsModel(MAVERICK_LYRICS_MODEL, userPrompt),
+    ]);
 
-    let finalLyricsDraft: SongDraft | null = null;
+    logger.info(
+      {
+        qwen:     { score: qwenResult.validation.qualityScore,     valid: qwenResult.validation.valid,     failures: qwenResult.validation.failures, soft: qwenResult.validation.softIssues },
+        maverick: { score: maverickResult.validation.qualityScore, valid: maverickResult.validation.valid, failures: maverickResult.validation.failures, soft: maverickResult.validation.softIssues },
+      },
+      "Lyrics race round 1 complete",
+    );
 
-    if (result1.validation.valid) {
-      logger.info({ model: result1.model }, "Maverick passed structure validation (round 1)");
-      finalLyricsDraft = result1.draft;
-    } else {
-      logger.warn({ model: result1.model, failures: result1.validation.failures }, "Maverick failed structure validation — triggering strict retry");
+    let bestSoFar = pickBestDraft([qwenResult, maverickResult]);
+    let finalLyricsDraft: SongDraft | null = bestSoFar?.validation.valid ? bestSoFar.draft : null;
 
-      // ── Round 2 — strict retry with Maverick ──────────────────────────
+    // ── Round 2 — strict retry on the better-performing model ──────────
+    // If neither draft fully passed (structure + deep checks), give the
+    // model that scored higher a second shot with the strict prompt.
+    // Avoids burning credits re-running the loser; usually fixes near-misses
+    // (off-by-one section length, missing keeper line, etc.).
+    if (!finalLyricsDraft) {
+      const retryModel = (bestSoFar?.model === QWEN_LYRICS_MODEL.name)
+        ? QWEN_LYRICS_MODEL
+        : MAVERICK_LYRICS_MODEL;
+      logger.warn(
+        { retryModel: retryModel.name, bestScore: bestSoFar?.validation.qualityScore ?? 0 },
+        "Round 1 had quality issues — running strict retry on the higher-scoring model",
+      );
       const strictPrompt = buildUserPrompt(promptParams, true);
-      const result2 = await callLyricsModel(MAVERICK_LYRICS_BACKUP, strictPrompt);
+      const retryResult  = await callLyricsModel(retryModel, strictPrompt);
+      logger.info(
+        { score: retryResult.validation.qualityScore, valid: retryResult.validation.valid, failures: retryResult.validation.failures, soft: retryResult.validation.softIssues },
+        "Strict retry complete",
+      );
 
-      if (result2.validation.valid) {
-        logger.info({ model: result2.model }, "Maverick passed structure validation (round 2)");
-        finalLyricsDraft = result2.draft;
-      } else {
-        logger.warn({ model: result2.model, failures: result2.validation.failures }, "Maverick failed both rounds — using best available draft");
-        const allResults = [result1, result2].filter(r => r.draft !== null);
-        finalLyricsDraft = allResults.sort((a, b) => a.validation.failures.length - b.validation.failures.length)[0]?.draft ?? null;
+      // Final pick is whichever of the three attempts scored highest.
+      const winner = pickBestDraft([qwenResult, maverickResult, retryResult]);
+      if (winner) {
+        bestSoFar = winner;
+        finalLyricsDraft = winner.draft;
+        if (!winner.validation.valid) {
+          logger.warn(
+            { model: winner.model, failures: winner.validation.failures, soft: winner.validation.softIssues, score: winner.validation.qualityScore },
+            "All lyrics attempts had issues — returning highest-scoring draft anyway",
+          );
+        } else {
+          logger.info({ model: winner.model, score: winner.validation.qualityScore }, "Strict retry produced a clean draft");
+        }
       }
+    } else {
+      logger.info(
+        { model: bestSoFar?.model, score: bestSoFar?.validation.qualityScore },
+        "Lyrics race produced a clean draft on round 1 — no retry needed",
+      );
     }
 
     if (!finalLyricsDraft) {

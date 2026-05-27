@@ -17,6 +17,7 @@ import { getSoundSignature } from "../engine/soundSignature";
 import { buildAfroMusePrompt } from "../engine/brain/afromuse-brain";
 import { createEngineJob, getEngineJob, advanceJob, failJob, markJobPersisted } from "../engine/jobStore.js";
 import { db, generatedTracksTable } from "@workspace/db";
+import { optionalAuth } from "../access/middleware.js";
 import { run as runInstrumental, type InstrumentalPayload } from "../engine/providers/instrumental.js";
 import { runVocalDemo, runLeadVocal, type VocalDemoPayload, type LeadVocalPayload } from "../engine/providers/vocal.js";
 import { run as runMastering, type MasteringPayload } from "../engine/providers/mastering.js";
@@ -62,15 +63,16 @@ function dispatch(
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-router.post("/generate-instrumental-preview", (req, res) => {
+router.post("/generate-instrumental-preview", optionalAuth, (req, res) => {
   const payload = req.body as InstrumentalPayload;
-  const userId = (req as any).user?.id;
+  const userId = (req as any).userId;
   const job = createEngineJob("instrumental", "instrumental", {
     userId: typeof userId === "number" ? userId : undefined,
     title: payload.title,
     style: payload.style,
     genre: payload.genre,
     mood: payload.mood,
+    model: (payload as any).aiMusicModel,
   });
 
   dispatch(
@@ -97,7 +99,7 @@ router.post("/generate-instrumental-preview", (req, res) => {
   res.json({ success: true, jobId: job.jobId, status: "queued" });
 });
 
-router.post("/generate-vocal-demo", (req, res) => {
+router.post("/generate-vocal-demo", optionalAuth, (req, res) => {
   const payload = req.body as VocalDemoPayload;
   const job = createEngineJob("vocal", "vocal");
 
@@ -107,7 +109,7 @@ router.post("/generate-vocal-demo", (req, res) => {
   res.json({ success: true, jobId: job.jobId, status: "queued" });
 });
 
-router.post("/generate-lead-vocals", (req, res) => {
+router.post("/generate-lead-vocals", optionalAuth, (req, res) => {
   const payload = req.body as LeadVocalPayload;
 
   if (!canProviderHandleCustomLyrics("vocal")) {
@@ -120,13 +122,14 @@ router.post("/generate-lead-vocals", (req, res) => {
     return;
   }
 
-  const userId = (req as any).user?.id;
+  const userId = (req as any).userId;
   const job = createEngineJob("lead-vocal", "vocal", {
     userId: typeof userId === "number" ? userId : undefined,
     title: payload.title,
     style: payload.style,
     genre: payload.genre,
     mood: payload.songMood,
+    model: (payload as any).aiMusicModel,
   });
 
   dispatch(job.jobId, () => runLeadVocal(job.jobId, payload), "Lead vocal generation failed");
@@ -135,7 +138,7 @@ router.post("/generate-lead-vocals", (req, res) => {
   res.json({ success: true, jobId: job.jobId, status: "queued" });
 });
 
-router.post("/mix-master", (req, res) => {
+router.post("/mix-master", optionalAuth, (req, res) => {
   const payload = req.body as MasteringPayload;
 
   if (!canProviderHandleMasteredExport("mastering")) {
@@ -221,6 +224,7 @@ router.get("/audio-job/:jobId", (req, res) => {
         coverArt: bp.coverArtUrl ?? null,
         genre: meta.genre ?? bp.genre ?? null,
         mood: meta.mood ?? bp.mood ?? null,
+        model: meta.model ?? null,
         style: meta.style ?? null,
         jobId: job.jobId,
       })

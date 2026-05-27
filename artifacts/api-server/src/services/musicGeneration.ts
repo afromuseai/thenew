@@ -16,6 +16,7 @@
 import { logger } from "../lib/logger.js";
 import {
   buildInstrumentalDescription,
+  buildLyricsText,
   type InstrumentalPayload,
 } from "../engine/providers/instrumental.js";
 import {
@@ -34,7 +35,6 @@ export interface BeatDNA {
 }
 
 export interface ArtistDNA {
-  referenceArtist?: string;
   vocalTexture?: string;
   singerStyle?: string;
   dialectDepth?: string;
@@ -156,7 +156,9 @@ function buildBeatDNAHint(dna?: BeatDNA): string {
 function buildArtistDNAHint(dna?: ArtistDNA): string {
   if (!dna) return "";
   const parts: string[] = [];
-  if (dna.referenceArtist) parts.push(`influenced by ${dna.referenceArtist}`);
+  // Artist-name references intentionally omitted — the AI Music API rejects
+  // copyrighted artist names. Style direction must be expressed in pure
+  // descriptive terms (texture, dialect, energy, etc.).
   if (dna.vocalTexture) parts.push(`${dna.vocalTexture} vocal texture`);
   if (dna.singerStyle) parts.push(`${dna.singerStyle} singing style`);
   if (dna.dialectDepth) parts.push(`${dna.dialectDepth} dialect depth`);
@@ -189,17 +191,19 @@ export function buildMusicPrompt(payload: MusicGenerationPayload): MusicPromptRe
 }
 
 // ─── Lyrics Formatter ─────────────────────────────────────────────────────────
+// Delegates to the single source of truth in `engine/providers/instrumental.ts`,
+// which accepts both `chorus` and `hook` field names and emits the canonical
+// arrangement: Intro → Chorus → Verse 1 → Chorus → Verse 2 → Chorus → Bridge → Outro.
 
 function formatLyricsText(lyrics: NonNullable<MusicGenerationPayload["lyrics"]>): string {
-  const parts: string[] = [];
-  if (lyrics.intro?.length)  parts.push("[Intro]\n"   + lyrics.intro.join("\n"));
-  if (lyrics.verse1?.length) parts.push("[Verse 1]\n" + lyrics.verse1.join("\n"));
-  if (lyrics.chorus?.length) parts.push("[Chorus]\n"  + lyrics.chorus.join("\n"));
-  if (lyrics.verse2?.length) parts.push("[Verse 2]\n" + lyrics.verse2.join("\n"));
-  if (lyrics.chorus?.length) parts.push("[Chorus]\n"  + lyrics.chorus.join("\n"));
-  if (lyrics.bridge?.length) parts.push("[Bridge]\n"  + lyrics.bridge.join("\n"));
-  if (lyrics.outro?.length)  parts.push("[Outro]\n"   + lyrics.outro.join("\n"));
-  return parts.join("\n\n").slice(0, 4800);
+  return buildLyricsText({
+    intro:  lyrics.intro,
+    chorus: lyrics.chorus,
+    verse1: lyrics.verse1,
+    verse2: lyrics.verse2,
+    bridge: lyrics.bridge,
+    outro:  lyrics.outro,
+  });
 }
 
 // ─── Core Generation Service ───────────────────────────────────────────────────

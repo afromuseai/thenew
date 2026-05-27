@@ -29,9 +29,10 @@ ${style?.trim() || "No specific direction provided"}`;
     `TITLE: ${title?.trim() || "Untitled Track"}`,
     `GENRE: ${genre || "Unknown"}`,
     `MOOD: ${mood || "Neutral"}`,
-    `BPM: ${bpm ?? "Auto"}`,
-    `KEY: ${key || "Auto"}`,
   ].join("\n");
+
+  // 2b. MUSICAL CONSTRAINTS — strict, locked, must-follow
+  const constraintsBlock = buildConstraintsBlock(key, bpm);
 
   // 3. DNA
   const dna = fuseDNA(beatDNA, isVocal ? artistDNA : undefined);
@@ -44,9 +45,48 @@ ${style?.trim() || "No specific direction provided"}`;
       ? "OUTPUT: Full vocal performance.\nInclude lead vocals, structure, hook, and emotional delivery."
       : "OUTPUT: Full song with vocals + instrumental integration.";
 
-  return [identityBlock, contextBlock, dna.beatBlock, dna.artistBlock, modeBlock]
+  return [
+    identityBlock,
+    contextBlock,
+    constraintsBlock,
+    dna.beatBlock,
+    dna.artistBlock,
+    modeBlock,
+  ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/**
+ * Build the strict MUSICAL CONSTRAINTS block.
+ *
+ * KEY and TEMPO are *not* casual hints — they are locked musical constraints.
+ * The block tells the downstream model that every melody, bassline, and chord
+ * must stay inside the specified key with no drift or modulation.
+ *
+ * If `key` is not provided, the block still emits a "Not specified" line so
+ * the constraint section is consistently present in every prompt.
+ */
+function buildConstraintsBlock(key?: string, bpm?: number): string {
+  const keyLine = key && key.trim()
+    ? `- Key: ${key.trim()}`
+    : "- Key: Not specified";
+
+  const tempoLine = typeof bpm === "number" && Number.isFinite(bpm) && bpm > 0
+    ? `- Tempo: ${bpm} BPM`
+    : "- Tempo: 95 BPM";
+
+  return [
+    "MUSICAL CONSTRAINTS (STRICT — MUST FOLLOW):",
+    keyLine,
+    tempoLine,
+    "",
+    "PRODUCTION RULES:",
+    "- MUST strictly follow the specified musical key",
+    "- All melodies, basslines, and chords MUST stay within the key",
+    "- No key drift or modulation allowed",
+    "- Must sound musical and harmonically correct",
+  ].join("\n");
 }
 
 export type { PromptInput } from "./types";

@@ -19,6 +19,17 @@ interface Props {
   draft: SongDraft | null;
   genre: string;
   mood: string;
+  /**
+   * Optional round-trip: when the Audio Studio is in "Use Studio Lyrics" mode
+   * and the user edits BPM, Key, or Energy here, those edits get pushed back
+   * into the lyric draft's productionNotes so the Lyrics Studio above stays in
+   * sync (and any subsequent generation respects the new values).
+   */
+  onPatchProductionNotes?: (patch: {
+    bpm?: string;
+    key?: string;
+    energy?: string;
+  }) => void;
 }
 
 export type QuickMode = "default" | "instrumental" | "hook-only" | "afrobeats-demo";
@@ -259,9 +270,134 @@ function hashString(s: string): number {
   return (h % 10000) / 10000;
 }
 
-function extractLyricsText(draft: SongDraft | null, genre: string, mood: string): string {
+/**
+ * Extract ONLY the lyric lines from a SongDraft for the audio textarea.
+ *
+ * The clipboard formatter (formatDraftForClipboard) bundles title, production
+ * notes, diversity report, keeper lines, instrumental guidance, and stems
+ * breakdown — all of which are metadata that pollutes the lyrics field and
+ * confuses the music model. The audio textarea must contain ONLY structured
+ * lyrics with [Section] markers, in the canonical AfroMuse order:
+ *   Intro → Chorus → Verse 1 → Chorus → Verse 2 → Chorus → Bridge → Outro.
+ */
+function extractLyricsForTextarea(draft: SongDraft | null): string {
   if (!draft) return "";
-  return formatDraftForClipboard(draft, genre, mood);
+  const out: string[] = [];
+  const push = (label: string, lines?: string[]) => {
+    if (!lines || lines.length === 0) return;
+    out.push(`[${label}]`, ...lines, "");
+  };
+  const bridgeLabel =
+    draft.diversityReport?.dnaMode === "CHAOS MODE" ? "Break" : "Bridge";
+  push("Intro",   draft.intro);
+  push("Chorus",  draft.hook);
+  push("Verse 1", draft.verse1);
+  push("Chorus",  draft.hook);
+  push("Verse 2", draft.verse2);
+  push("Chorus",  draft.hook);
+  push(bridgeLabel, draft.bridge);
+  push("Outro",   draft.outro);
+  return out.join("\n").trim();
+}
+
+/**
+ * Backwards-compatible wrapper. Older code paths used the clipboard formatter
+ * by accident; new code should call extractLyricsForTextarea directly.
+ * Keeping the old name as an alias makes the call sites unambiguous and avoids
+ * a sweeping rename.
+ */
+function extractLyricsText(draft: SongDraft | null, _genre: string, _mood: string): string {
+  return extractLyricsForTextarea(draft);
+}
+
+/**
+ * Compress everything the Lyrics Studio knows about a song's production blueprint
+ * into a single dense paragraph that fits the Style Direction field (≤1000 chars).
+ *
+ * The Style Direction field is what the music model actually reads to decide how
+ * the track should sound. When the user clicks "Use Studio Lyrics", we must
+ * carry the entire intelligence layer (blueprint, sonic identity, vocal identity,
+ * arrangement, DNA, energy curve, etc.) down into this one field so the
+ * generation matches the lyrics they just crafted upstairs.
+ *
+ * Layout strategy: emit the most musically-actionable details first (genre/bpm/
+ * key/energy → bounce/atmosphere → vocal → arrangement → DNA/lens), so when we
+ * truncate at 1000 chars we keep the highest-signal context.
+ */
+function summarizeDraftForStyleDirection(
+  draft: SongDraft | null,
+  genre: string,
+  mood: string,
+  maxChars = 1000,
+): string {
+  if (!draft) return "";
+  const parts: string[] = [];
+  const pn   = draft.productionNotes ?? {};
+  const sid  = draft.sonicIdentity   ?? {};
+  const vid  = draft.vocalIdentity   ?? {};
+  const dna  = draft.diversityReport ?? {};
+
+  // 1) Headline — genre/mood/energy — the model's primary feel anchors.
+  // BPM and key are intentionally excluded: they have their own dedicated
+  // numeric/select inputs below the Style Direction field, so duplicating
+  // them in this text blurb would just waste characters and risk drift if
+  // the user edits one but not the other.
+  const headline: string[] = [];
+  if (genre)     headline.push(genre);
+  if (mood)      headline.push(`${mood.toLowerCase()} mood`);
+  if (pn.energy) headline.push(`${pn.energy.toLowerCase()} energy`);
+  if (headline.length) parts.push(headline.join(", ") + ".");
+
+  // 2) Sonic identity — the bounce/atmosphere/texture trio the user picked upstairs.
+  const sonic: string[] = [];
+  if (sid.coreBounce)  sonic.push(`bounce: ${sid.coreBounce}`);
+  if (sid.atmosphere)  sonic.push(`atmosphere: ${sid.atmosphere}`);
+  if (sid.mainTexture) sonic.push(`texture: ${sid.mainTexture}`);
+  if (sonic.length) parts.push(sonic.join("; ") + ".");
+
+  // 3) Vocal direction — lead type / delivery / emotional tone.
+  const vocal: string[] = [];
+  if (vid.leadType)      vocal.push(`lead ${vid.leadType}`);
+  if (vid.deliveryStyle) vocal.push(vid.deliveryStyle.toLowerCase());
+  if (vid.emotionalTone) vocal.push(`${vid.emotionalTone.toLowerCase()} tone`);
+  if (vocal.length) parts.push(`Vocal: ${vocal.join(", ")}.`);
+
+  // 4) Arrangement — preferred order is the explicit blueprint, falling back to
+  //    the production-notes arrangement, then the top-level arrangement field.
+  const arrangement =
+    draft.arrangementBlueprint ||
+    pn.arrangement ||
+    draft.arrangement;
+  if (arrangement) parts.push(`Arrangement: ${arrangement}.`);
+
+  // 5) Melody / chord guidance — gives the model harmonic intent.
+  if (draft.chordVibe)      parts.push(`Chords: ${draft.chordVibe}.`);
+  const melody = pn.melodyDirection || draft.melodyDirection;
+  if (melody)               parts.push(`Melody: ${melody}.`);
+
+  // 6) DNA / lens — keeps the song's emotional fingerprint intact.
+  const dnaBits: string[] = [];
+  if (dna.dnaMode)       dnaBits.push(dna.dnaMode);
+  if (dna.emotionalLens) dnaBits.push(`${dna.emotionalLens} lens`);
+  if (dna.energyCurve)   dnaBits.push(`${dna.energyCurve} curve`);
+  if (dna.urgencyLevel)  dnaBits.push(`${dna.urgencyLevel} urgency`);
+  if (dnaBits.length) parts.push(`DNA: ${dnaBits.join(", ")}.`);
+
+  // 7) Hook focus — last because it's repeated in the lyrics already.
+  if (pn.hookStrength) parts.push(`Hook: ${pn.hookStrength}.`);
+
+  // 8) Instrumental guidance — verbose, so it goes near the end where truncation
+  //    can safely chop it without losing core direction.
+  if (draft.instrumentalGuidance) {
+    parts.push(draft.instrumentalGuidance.replace(/\s+/g, " ").trim());
+  }
+
+  let out = parts.join(" ").replace(/\s+/g, " ").trim();
+  if (out.length > maxChars) {
+    // Cut on a word boundary so we don't end mid-word, then add an ellipsis.
+    out = out.slice(0, maxChars - 1).replace(/\s+\S*$/, "") + "…";
+  }
+  return out;
 }
 
 /**
@@ -1274,7 +1410,7 @@ function ProToolsSection({ onToast }: { onToast: (title: string, description: st
   );
 }
 
-const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudioV2({ draft, genre, mood }, ref) {
+const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudioV2({ draft, genre, mood, onPatchProductionNotes }, ref) {
   const { toast } = useToast();
   const textareaRef          = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef     = useRef<MediaRecorder | null>(null);
@@ -1290,7 +1426,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const [audioTrackTitle,      setAudioTrackTitle]      = useState("");
   const [audioStyleDirection,  setAudioStyleDirection]  = useState("");
   const [audioGenre,           setAudioGenre]           = useState("Afrobeats");
-  const [audioStyleReference,  setAudioStyleReference]  = useState("");
   const [productionStyle,      setProductionStyle]      = useState("");
   const [vocalGender,          setVocalGender]          = useState("male");
   const [vocalStyle,           setVocalStyle]           = useState("Smooth");
@@ -1360,7 +1495,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const [leadVocalBuildMode,    setLeadVocalBuildMode]    = useState("full");
 
   // Voice Engine personalization
-  const [artistReference,       setArtistReference]       = useState("");
   const [dialectDepth,          setDialectDepth]          = useState<typeof DIALECT_DEPTHS[number]>("Medium");
   const [voiceTexture,          setVoiceTexture]          = useState<typeof VOICE_TEXTURES[number]>("Warm");
   const [singingStyle,          setSingingStyle]          = useState<typeof SINGING_STYLES[number]>("Afrobeat");
@@ -1402,21 +1536,72 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const hasLyrics          = audioLyrics.trim().length > 0 || draft !== null;
   const isProducer         = workflowMode === "producer";
 
+  // ── Auto-sync from Lyrics Studio → Audio Studio ──────────────────────────
+  // When "Use Studio Lyrics" is on and the upstairs draft changes (user
+  // generated a new song or tweaked one), refresh the linked audio fields:
+  // lyrics, title, energy, and style direction.
+  //
+  // BPM and Key are intentionally NOT auto-populated — they live in their
+  // own dedicated inputs and the user wants those values to remain under
+  // their direct control (they pick the BPM/key they want for production).
+  //
+  // We intentionally overwrite the synced fields — the user has explicitly
+  // opted into auto-sync by leaving the toggle on. If they want a manual
+  // override they can flip the toggle off or re-edit the field after sync.
   useEffect(() => {
-    if (useGeneratedLyrics && draft) {
-      setAudioLyrics(extractLyricsText(draft, genre, mood));
-    }
-  }, [draft, useGeneratedLyrics, genre, mood]);
+    if (!useGeneratedLyrics || !draft) return;
+    const pn = draft.productionNotes ?? {};
+    setAudioLyrics(extractLyricsForTextarea(draft));
+    if (draft.title)  setAudioTrackTitle(draft.title);
+    if (pn.energy)    setEnergyLevel(pn.energy);
+    const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
+    if (styleSummary) setAudioStyleDirection(styleSummary);
+    // genre/mood are read inside summarize, but excluded from deps so we don't
+    // re-run every keystroke in the Lyrics Studio's genre input — the next
+    // explicit draft change (re-generation) will pick up the new values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, useGeneratedLyrics]);
+
+  // ── Round-trip: push BPM / Key / Energy edits BACK to the lyric draft ────
+  // When the user is in "Use Studio Lyrics" mode and tweaks any of these
+  // values down here, mirror them into the lyric studio's productionNotes so
+  // the two surfaces never disagree. Skipped when no callback is provided
+  // (component still works standalone).
+  useEffect(() => {
+    if (!onPatchProductionNotes || !useGeneratedLyrics || !draft) return;
+    const pn = draft.productionNotes ?? {};
+    const patch: { bpm?: string; key?: string; energy?: string } = {};
+    if (bpm        && bpm        !== pn.bpm)    patch.bpm    = bpm;
+    if (musicalKey && musicalKey !== pn.key)    patch.key    = musicalKey;
+    if (energyLevel && energyLevel !== pn.energy) patch.energy = energyLevel;
+    if (Object.keys(patch).length === 0) return;
+    // Debounce so a rapid sequence of typed digits doesn't thrash the parent.
+    const t = setTimeout(() => onPatchProductionNotes(patch), 350);
+    return () => clearTimeout(t);
+  }, [bpm, musicalKey, energyLevel, draft, useGeneratedLyrics, onPatchProductionNotes]);
 
   const handleUseLyrics = () => {
     if (!draft) {
       toast({ title: "No lyrics yet", description: "Generate lyrics first or paste your own lyrics.", variant: "destructive" });
       return;
     }
-    const text = extractLyricsText(draft, genre, mood);
-    setAudioLyrics(text);
+    // Flipping the toggle on triggers the auto-sync effect above, which fills
+    // lyrics + title + energy + style direction in one shot. We also do an
+    // immediate fill here so the user sees fields populate on the very same
+    // render (the effect runs after commit).
+    //
+    // BPM and Key are deliberately left alone — those stay user-controlled.
+    const pn = draft.productionNotes ?? {};
+    setAudioLyrics(extractLyricsForTextarea(draft));
+    if (draft.title)  setAudioTrackTitle(draft.title);
+    if (pn.energy)    setEnergyLevel(pn.energy);
+    const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
+    if (styleSummary) setAudioStyleDirection(styleSummary);
     setUseGeneratedLyrics(true);
-    toast({ title: "Lyrics loaded", description: "Your generated lyrics are ready for audio production." });
+    toast({
+      title: "Studio lyrics loaded",
+      description: "Lyrics, title, energy, and style direction are now in sync. Set BPM and key yourself.",
+    });
     textareaRef.current?.focus();
   };
 
@@ -1454,8 +1639,20 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   const handleToggleAutoLyrics = (next: boolean) => {
     setUseGeneratedLyrics(next);
     if (next && draft) {
-      setAudioLyrics(extractLyricsText(draft, genre, mood));
-      toast({ title: "Auto-sync on", description: "Lyrics will update whenever you generate from the Lyrics Studio above." });
+      // Same hydration path as handleUseLyrics — keep the two entry points
+      // identical so users get consistent behavior whether they click the
+      // big "Use Studio Lyrics" button or flip the toggle. BPM and Key are
+      // intentionally left alone in both paths.
+      const pn = draft.productionNotes ?? {};
+      setAudioLyrics(extractLyricsForTextarea(draft));
+      if (draft.title)  setAudioTrackTitle(draft.title);
+      if (pn.energy)    setEnergyLevel(pn.energy);
+      const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
+      if (styleSummary) setAudioStyleDirection(styleSummary);
+      toast({
+        title: "Auto-sync on",
+        description: "Lyrics, title, energy and style will update with every Lyrics Studio change.",
+      });
     }
   };
 
@@ -1479,7 +1676,8 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
       includeArrangementNotes,
       includeStemsBreakdown,
       lyrics: audioLyrics,
-      styleReference: audioStyleReference,
+      // Artist-name references removed — pass empty string to satisfy the legacy signature.
+      styleReference: "",
       ...(isProducer ? { introBehavior, chorusLift, drumDensity, bassWeight, transitionStyle, outroStyle } : {}),
       bounceStyle,
       melodyDensity,
@@ -1525,67 +1723,100 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
     setIntelligence(intel);
 
     try {
-      const defaults = getGenreDefaults(audioGenre);
+      const defaults    = getGenreDefaults(audioGenre);
       const resolvedBpm = bpm ? Number(bpm.replace(/\D.*/, "")) || undefined : undefined;
       const resolvedKey = musicalKey || defaults.key;
 
-      const payload = {
-        title: audioTrackTitle.trim() || undefined,
-        style: audioStyleDirection.trim() || undefined,
-        genre: audioGenre,
-        mood: mood || "Uplifting",
-        bpm: resolvedBpm,
-        key: resolvedKey,
-        energy: energyLevel,
-        hitmakerMode: useHitmakerHookPriority,
-        soundReference: audioStyleReference || undefined,
-        productionStyle: productionStyle || undefined,
-        mixFeel,
-        introBehavior: isProducer ? introBehavior : undefined,
-        chorusLift: isProducer ? chorusLift : undefined,
-        drumDensity: isProducer ? drumDensity : undefined,
-        bassWeight: isProducer ? bassWeight : undefined,
-        transitionStyle: isProducer ? transitionStyle : undefined,
-        outroStyle: isProducer ? outroStyle : undefined,
-        bounceStyle: bounceStyle || undefined,
-        melodyDensity: melodyDensity || undefined,
-        drumCharacter: drumCharacter || undefined,
-        hookLift: hookLift || undefined,
-        buildMode: generationMode,
-        // AI Music API controls
-        aiMusicModel: aiMusicModel || undefined,
-        gender: aiMusicGender || undefined,
-        styleWeight: aiStyleWeight,
-        weirdnessConstraint: aiWeirdnessConstraint,
-        audioWeight: aiAudioWeight,
-        negativeTags: aiNegativeTags.trim() || undefined,
-        // Only send raw lyrics text when the user typed/pasted their own lyrics.
-        // When using Studio Lyrics (useGeneratedLyrics), audioLyrics is the full
-        // formatted clipboard dump — the structured sections already carry the clean
-        // lyric lines and sending this blob would pollute ElevenLabs' prompt.
-        lyricsText: (!useGeneratedLyrics && audioLyrics) ? audioLyrics : undefined,
-        // Build structured sections for ElevenLabs full-song composition mode.
-        // Priority: generated draft sections → parsed sections from pasted lyrics text.
-        // Skipped entirely in instrumental-only mode.
-        lyricsSections: (() => {
-          if (isInstrumentalMode) return undefined;
-          if (draft) {
-            const secs = {
-              intro:  draft.intro  && draft.intro.length  > 0 ? draft.intro  : undefined,
-              hook:   draft.hook   && draft.hook.length   > 0 ? draft.hook   : undefined,
-              verse1: draft.verse1 && draft.verse1.length > 0 ? draft.verse1 : undefined,
-              verse2: draft.verse2 && draft.verse2.length > 0 ? draft.verse2 : undefined,
-              bridge: draft.bridge && draft.bridge.length > 0 ? draft.bridge : undefined,
-              outro:  draft.outro  && draft.outro.length  > 0 ? draft.outro  : undefined,
-            };
-            // If draft has no actual lyric content, fall through to text parsing
-            if (secs.hook || secs.verse1) return secs;
-          }
-          // Fall back to parsing audioLyrics text (user pasted or typed lyrics)
-          if (audioLyrics.trim()) return parseLyricsTextToSections(audioLyrics);
-          return undefined;
-        })(),
-      };
+      // ─── "Use Studio Lyrics" mode — minimal, lyrics-driven payload ─────────
+      // When the user pulled lyrics from the Lyrics Studio above, the song is
+      // already fully spec'd by the lyric sheet (title, BPM, key, production
+      // notes). Send ONLY those five things and let the backend defaults
+      // handle everything else — no genre overrides, no Beat DNA, no Mix Feel,
+      // no producer toggles. This keeps the prompt tight and lyric-faithful.
+      const useStudioLyricsMode = useGeneratedLyrics && draft && !isInstrumentalMode;
+
+      let payload: Record<string, unknown>;
+
+      if (useStudioLyricsMode && draft) {
+        const pn = draft.productionNotes ?? {};
+
+        // BPM from the lyrics studio's productionNotes (e.g. "108 BPM" → 108)
+        const studioBpm = pn.bpm
+          ? Number(String(pn.bpm).replace(/\D.*/, "")) || undefined
+          : resolvedBpm;
+
+        // Key from the lyrics studio's productionNotes
+        const studioKey = pn.key || resolvedKey;
+
+        // Production Notes → style field (canonical, descriptive — no artist names)
+        const styleParts = [
+          draft.chordVibe,
+          pn.arrangement || draft.arrangement,
+          pn.melodyDirection || draft.melodyDirection,
+          pn.hookStrength    ? `${pn.hookStrength} hook`    : null,
+          pn.lyricalDepth    ? `${pn.lyricalDepth} lyrical depth` : null,
+          pn.energy          ? `${pn.energy} energy`        : null,
+        ].filter((s): s is string => Boolean(s && s.trim()));
+        const studioStyle = styleParts.join(", ").slice(0, 1000);
+
+        const studioSections = {
+          intro:  draft.intro  && draft.intro.length  > 0 ? draft.intro  : undefined,
+          hook:   draft.hook   && draft.hook.length   > 0 ? draft.hook   : undefined,
+          verse1: draft.verse1 && draft.verse1.length > 0 ? draft.verse1 : undefined,
+          verse2: draft.verse2 && draft.verse2.length > 0 ? draft.verse2 : undefined,
+          bridge: draft.bridge && draft.bridge.length > 0 ? draft.bridge : undefined,
+          outro:  draft.outro  && draft.outro.length  > 0 ? draft.outro  : undefined,
+        };
+
+        payload = {
+          title:          (draft.title || audioTrackTitle).trim() || undefined,
+          bpm:            studioBpm,
+          key:            studioKey,
+          style:          studioStyle || undefined,
+          lyricsSections: studioSections,
+          buildMode:      "full",
+          // Required for backend routing — keep model selection but strip everything else.
+          aiMusicModel:   aiMusicModel || undefined,
+        };
+      } else {
+        // ─── Standard mode — full producer payload (paste-your-own / instrumental-only) ─
+        payload = {
+          title: audioTrackTitle.trim() || undefined,
+          style: audioStyleDirection.trim() || undefined,
+          genre: audioGenre,
+          mood:  mood || "Uplifting",
+          bpm:   resolvedBpm,
+          key:   resolvedKey,
+          energy: energyLevel,
+          hitmakerMode:    useHitmakerHookPriority,
+          productionStyle: productionStyle || undefined,
+          mixFeel,
+          introBehavior:   isProducer ? introBehavior   : undefined,
+          chorusLift:      isProducer ? chorusLift      : undefined,
+          drumDensity:     isProducer ? drumDensity     : undefined,
+          bassWeight:      isProducer ? bassWeight      : undefined,
+          transitionStyle: isProducer ? transitionStyle : undefined,
+          outroStyle:      isProducer ? outroStyle      : undefined,
+          bounceStyle:     bounceStyle    || undefined,
+          melodyDensity:   melodyDensity  || undefined,
+          drumCharacter:   drumCharacter  || undefined,
+          hookLift:        hookLift       || undefined,
+          buildMode:       generationMode,
+          // AI Music API controls
+          aiMusicModel:        aiMusicModel || undefined,
+          gender:              aiMusicGender || undefined,
+          styleWeight:         aiStyleWeight,
+          weirdnessConstraint: aiWeirdnessConstraint,
+          audioWeight:         aiAudioWeight,
+          negativeTags:        aiNegativeTags.trim() || undefined,
+          // Raw lyrics text only flows through when the user pasted/typed their own.
+          lyricsText: audioLyrics || undefined,
+          // Structured sections parsed from the textarea for full-song composition.
+          lyricsSections: isInstrumentalMode
+            ? undefined
+            : (audioLyrics.trim() ? parseLyricsTextToSections(audioLyrics) : undefined),
+        };
+      }
 
       const res = await fetch("/api/generate-instrumental-preview", {
         method: "POST",
@@ -1767,7 +1998,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
           genre:           audioGenre,
           bpm:             resolvedBpm,
           key:             resolvedKey,
-          artistReference: artistReference || undefined,
           dialectDepth,
           voiceTexture,
           singingStyle,
@@ -2474,18 +2704,32 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
 
               {/* Style / Direction — critical AI direction control */}
               <div className="sm:col-span-2 lg:col-span-3">
-                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
-                  Style / Direction
-                  <span className="ml-2 text-[8px] normal-case tracking-normal font-normal text-amber-400/50">AI direction control</span>
+                <label className="flex items-center justify-between text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
+                  <span>
+                    Style / Direction
+                    <span className="ml-2 text-[8px] normal-case tracking-normal font-normal text-amber-400/50">AI direction control</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono normal-case tracking-normal ${
+                      audioStyleDirection.length > 1000
+                        ? "text-red-400"
+                        : audioStyleDirection.length > 900
+                          ? "text-amber-400/70"
+                          : "text-white/30"
+                    }`}
+                  >
+                    {audioStyleDirection.length}/1000
+                  </span>
                 </label>
                 <textarea
                   value={audioStyleDirection}
-                  onChange={(e) => setAudioStyleDirection(e.target.value)}
+                  onChange={(e) => setAudioStyleDirection(e.target.value.slice(0, 1000))}
                   rows={6}
-                  placeholder="A soulful Afrobeat love song with Burna Boy × Tems influence, emotional but danceable"
+                  maxLength={1000}
+                  placeholder="A soulful, danceable Afrobeat love song — warm guitars, mid-tempo bounce, intimate but uplifting energy"
                   className="w-full rounded-xl bg-white/4 border border-white/8 px-3 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all resize-none leading-relaxed"
                 />
-                <p className="text-[10px] text-white/18 mt-1.5 italic">Describe the vibe, references, mood, and emotion — the more direction, the sharper the result</p>
+                <p className="text-[10px] text-white/18 mt-1.5 italic">Describe the vibe, mood, and emotion in pure descriptive terms — no artist names (the API rejects them).</p>
               </div>
 
               {/* Genre */}
@@ -2499,21 +2743,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                   </select>
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
                 </div>
-              </div>
-
-              {/* Sound / Artist Direction */}
-              <div className="sm:col-span-2">
-                <label className="block text-[10px] font-bold tracking-widest uppercase text-white/35 mb-2">
-                  {isProducer ? "Production Reference" : "Sound / Artist Direction"}
-                </label>
-                <input type="text" value={audioStyleReference} onChange={(e) => setAudioStyleReference(e.target.value)}
-                  placeholder={
-                    isProducer
-                      ? "e.g. Timbaland arrangement style, Sarz drum pattern, Legendury Beatz chord movement..."
-                      : "e.g. Burna Boy x Asake, Omah Lay type vibe, soulful church atmosphere..."
-                  }
-                  className="w-full h-10 rounded-xl bg-white/4 border border-white/8 px-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-all"
-                />
               </div>
 
               {/* BPM + Key */}
@@ -3140,25 +3369,6 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
                           className="overflow-hidden"
                         >
                           <div className="px-4 pb-5 space-y-5 border-t border-fuchsia-500/10">
-
-                            {/* Artist Reference */}
-                            <div className="pt-4">
-                              <label className="block text-[10px] font-bold tracking-widest uppercase text-white/30 mb-2.5">
-                                Artist Reference / Voice Clone
-                                <span className="ml-2 text-[8px] normal-case tracking-normal font-normal text-white/18">optional — shape direction</span>
-                              </label>
-                              <div className="relative">
-                                <Mic2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fuchsia-400/35 pointer-events-none" />
-                                <input
-                                  type="text"
-                                  value={artistReference}
-                                  onChange={(e) => setArtistReference(e.target.value)}
-                                  placeholder="e.g. Burna Boy, Wizkid, Tems, Davido…"
-                                  className="w-full h-10 rounded-xl bg-white/4 border border-fuchsia-500/15 pl-9 pr-3 text-sm text-white placeholder:text-white/18 focus:outline-none focus:border-fuchsia-500/40 transition-all"
-                                />
-                              </div>
-                              <p className="text-[10px] text-white/14 mt-1.5 italic">Shapes vocal texture, delivery cadence and stylistic phrasing — does not clone or replicate any artist.</p>
-                            </div>
 
                             {/* Dialect Depth */}
                             <div>

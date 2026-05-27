@@ -84,7 +84,9 @@ export interface InstrumentalPayload {
   // singing the exact lyrics instead of an instrumental-only beat.
   lyricsSections?: {
     intro?:  string[];
+    /** Chorus content. Both `hook` and `chorus` are accepted for backward compatibility. */
     hook?:   string[];
+    chorus?: string[];
     verse1?: string[];
     verse2?: string[];
     bridge?: string[];
@@ -709,7 +711,34 @@ export function buildInstrumentalDescription(p: InstrumentalPayload): BuiltPromp
   // Lead the prompt with the user's exact creative direction so the model honours
   // it before reading the auto-generated descriptors.
   const directionLead = userDirection ? `Direction from the artist: ${userDirection}. ` : "";
-  const prompt = directionLead + sentences.join(" ") + " Instrumental only, no vocals.";
+
+  // Strict musical-constraint trailer. Key and tempo are NOT casual hints —
+  // they are locked constraints. Every melody, bassline, and chord must stay
+  // within the specified key with no drift or modulation.
+  const userSpecifiedKey = (p.key ?? "").trim().length > 0;
+  const constraintTrailer =
+    ` MUSICAL CONSTRAINTS (STRICT — MUST FOLLOW): Key: ${key}; Tempo: ${bpm} BPM.` +
+    ` All melodies, basslines, and chords MUST stay strictly within ${key}.` +
+    ` No key drift or modulation allowed. Tempo must remain locked at ${bpm} BPM.` +
+    ` The result must sound musical and harmonically correct.`;
+
+  const prompt =
+    directionLead +
+    sentences.join(" ") +
+    constraintTrailer +
+    " Instrumental only, no vocals.";
+
+  // Surface a structured trace so logs/debug confirm the key actually reached
+  // the prompt builder (helps catch front-end → API field-name regressions).
+  logger.debug(
+    {
+      keyReceived: userSpecifiedKey,
+      keyResolved: key,
+      bpmReceived: typeof p.bpm === "number",
+      bpmResolved: bpm,
+    },
+    "Instrumental prompt — musical constraints locked",
+  );
 
   // Compact style string for AI Music API custom mode (max 1000 chars for chirp-v4-5+)
   const styleTagParts: string[] = [
@@ -726,7 +755,8 @@ export function buildInstrumentalDescription(p: InstrumentalPayload): BuiltPromp
     mixFeel      ? resolveMixFeel(mixFeel)   : null,
     p.productionStyle?.trim() || null,
   ].filter((s): s is string => Boolean(s));
-  const styleString = styleTagParts.join(", ").slice(0, 950);
+  // chirp-v4-5+ accepts up to 1000 chars in the style field
+  const styleString = styleTagParts.join(", ").slice(0, 1000);
 
   // Brief for diagnostic logging (stored in sonicNotes)
   const brief = [
@@ -753,17 +783,28 @@ export function buildInstrumentalDescription(p: InstrumentalPayload): BuiltPromp
 /**
  * Formats AfroMuse lyricsSections into a single lyrics block for AI Music API `prompt`.
  * Section markers like [Verse 1], [Chorus] help the model understand song structure.
+ *
+ * Accepts both `chorus` and `hook` field names — they are treated as the same section.
+ *
+ * Arrangement (final, locked):
+ *   Intro → Chorus → Verse 1 → Chorus → Verse 2 → Chorus → Bridge → Outro
+ *
+ * The chorus leads the song right after the intro so the hook lands immediately,
+ * then returns after each verse and the bridge resolves into the outro.
  */
-function buildLyricsText(secs: NonNullable<InstrumentalPayload["lyricsSections"]>): string {
+export function buildLyricsText(secs: NonNullable<InstrumentalPayload["lyricsSections"]>): string {
+  const chorus = secs.chorus?.length ? secs.chorus : secs.hook?.length ? secs.hook : undefined;
   const parts: string[] = [];
+
   if (secs.intro?.length)  parts.push("[Intro]\n"   + secs.intro.join("\n"));
+  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
   if (secs.verse1?.length) parts.push("[Verse 1]\n" + secs.verse1.join("\n"));
-  if (secs.hook?.length)   parts.push("[Chorus]\n"  + secs.hook.join("\n"));
+  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
   if (secs.verse2?.length) parts.push("[Verse 2]\n" + secs.verse2.join("\n"));
-  if (secs.hook?.length)   parts.push("[Chorus]\n"  + secs.hook.join("\n"));
+  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
   if (secs.bridge?.length) parts.push("[Bridge]\n"  + secs.bridge.join("\n"));
-  if (secs.hook?.length)   parts.push("[Outro Chorus]\n" + secs.hook.join("\n"));
   if (secs.outro?.length)  parts.push("[Outro]\n"   + secs.outro.join("\n"));
+
   return parts.join("\n\n").slice(0, 4800); // chirp-v4-5+ supports up to 5000 chars
 }
 

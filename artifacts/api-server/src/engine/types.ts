@@ -133,6 +133,7 @@ export interface EngineJob {
     style?: string;
     genre?: string;
     mood?: string;
+    model?: string;
   };
   // Persistence guard — flipped to true on first successful DB insert so repeat
   // polls of /audio-job/:jobId don't create duplicate library rows.
