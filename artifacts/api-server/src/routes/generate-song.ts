@@ -73,7 +73,7 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "straight",
     },
     performanceType: "Club Banger",
-    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
+    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [4], outro: [2, 4] },
   },
   {
     dnaMode: "STORY MODE",
@@ -119,7 +119,7 @@ const diversityProfiles: DiversityProfile[] = [
     energyLevel: "Low",
     arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "few words, silence matters, emotional weight per word",
-    chorusLengthPattern: "minimal 2-to-4-line hook",
+    chorusLengthPattern: "sparse 4-line hook — each line carries full weight",
     energyCurve: "low pressure → exposed center → quiet aftershock",
     urgencyLevel: "intimate, sparse, wounded",
     artistMindset: "an artist saying less because each word costs something",
@@ -130,7 +130,7 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Emotional Replay",
-    sectionLineTargets: { intro: [2], hook: [2, 4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2] },
+    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [4], outro: [2] },
   },
   {
     dnaMode: "MAXIMAL MODE",
@@ -157,7 +157,7 @@ const diversityProfiles: DiversityProfile[] = [
     energyLevel: "Low",
     arrangementOrder: STANDARD_ARRANGEMENT,
     hookStructure: "short, raw, aching — feels like the artist is singing to themselves",
-    chorusLengthPattern: "bare 2-line hook with space after each line",
+    chorusLengthPattern: "aching 4-line hook — raw and unresolved",
     energyCurve: "quiet opening → subdued rise → hollow landing",
     urgencyLevel: "inward, fragile, unresolved",
     artistMindset: "someone who just realized they are completely alone",
@@ -168,7 +168,7 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "swing",
     },
     performanceType: "Emotional Replay",
-    sectionLineTargets: { intro: [2, 4], hook: [2], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
+    sectionLineTargets: { intro: [2, 4], hook: [4], verse1: [8], verse2: [8], bridge: [4], outro: [2, 4] },
   },
   {
     dnaMode: "STORY MODE",
@@ -206,7 +206,7 @@ const diversityProfiles: DiversityProfile[] = [
       bouncePattern: "straight",
     },
     performanceType: "TikTok Viral",
-    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [2, 4], outro: [2, 4] },
+    sectionLineTargets: { intro: [2], hook: [4], verse1: [8], verse2: [8], bridge: [4], outro: [2, 4] },
   },
 ];
 
@@ -323,7 +323,7 @@ function buildDiversityDirective(profile: DiversityProfile): string[] {
     "All SIX section keys MUST be returned with non-empty content:",
     "    intro, hook, verse1, verse2, bridge, outro",
     "  → `hook` is written ONCE — it is reused at the three chorus positions in the arrangement.",
-    "  → No section may be returned as an empty array. If you have nothing original for a section, write a short, on-theme version (intro/outro = 2 short lines; bridge = 2-4 lines).",
+    "  → No section may be returned as an empty array. If you have nothing original for a section, write a short, on-theme version (intro/outro = 2 short lines; bridge = exactly 4 lines; hook = 4-8 lines).",
     "  → Honour the SECTION TARGETS line counts above for each section.",
     "All other required output fields (songQualityReport, hookVariants, hitPrediction, globalReleaseReport, etc.)",
     "must still be included exactly as specified in the system output format — do NOT skip them.",
@@ -331,7 +331,12 @@ function buildDiversityDirective(profile: DiversityProfile): string[] {
   ];
 }
 
-const SYSTEM_PROMPT = `AFROMUSE_ENGINE
+const SYSTEM_PROMPT = `AFROMUSE_ENGINE — LYRICS INTELLIGENCE v5.0
+
+╔══════════════════════════════════════════════════════════════╗
+  🎵 AFROMUSE LYRICS INTELLIGENCE v5.0
+  Layers: V2 Language | V3 Songwriting | V4 Emotional Gradient | V5 Vocal Flow
+╚══════════════════════════════════════════════════════════════╝
 
 STRUCTURE:
 Structure is determined by the DIVERSITY ENGINE directive in the user message.
@@ -755,6 +760,84 @@ Does each section maintain the same language identity from intro to outro?
 If the verse sounds native and the chorus drifts → the chorus failed. Rewrite it.
 
 ALL SEVEN CHECKS MUST PASS. Only after they pass → produce the JSON output.
+
+──────────────────────────────────
+V4 EMOTIONAL INTENSITY GRADIENT (MANDATORY):
+Every song must follow a controlled, escalating emotional curve. No section may repeat the same intensity as the section before it. Emotional flatlines are forbidden.
+
+SECTION INTENSITY RULES:
+  INTRO       → Intensity 1–3. Set the emotional baseline. Subtle, atmospheric, do NOT open at peak.
+  VERSE 1     → Intensity 3–5. Emotional exposure begins. Storytelling + vulnerability.
+  CHORUS 1    → Intensity 5–7. First emotional release. Strong — but NOT the peak yet.
+  VERSE 2     → Intensity 5–7. Deeper reflection or deterioration. Must feel heavier than Verse 1.
+  CHORUS 2    → Intensity 7–8. Must feel MORE intense than Chorus 1. Add urgency, depth, stronger word choices.
+  BRIDGE      → Intensity 9–10. THE PEAK. Most vulnerable or most intense section in the entire song. Must exceed chorus emotionally.
+  FINAL CHORUS → Intensity 8–9. Hybrid: bridge-level emotional weight + chorus familiarity. Final release.
+  OUTRO       → Intensity 4–6. Controlled descent. Emotional echo of the peak, not a fade to nothing.
+
+CHORUS DIFFERENTIATION RULE:
+  - Chorus 2 MUST be written or delivered at higher intensity than Chorus 1.
+  - Methods: add urgency words, deepen the emotional imagery, increase the emotional stakes.
+  - FORBIDDEN: identical emotional tone in both chorus occurrences.
+
+BRIDGE ABSOLUTE RULE:
+  - Bridge must be the emotionally peak section. If the bridge is weaker than the chorus → rewrite it.
+  - Bridge reveals something new: more vulnerable, more confessional, or more explosive than anything before.
+
+FORBIDDEN BEHAVIOR:
+  ✗ Identical emotional weight in two consecutive sections.
+  ✗ Bridge with less emotional intensity than the chorus.
+  ✗ Final chorus that retreats emotionally from the bridge.
+  ✗ Static energy from Verse 1 → Verse 2.
+
+SILENT INTERNAL CHECK (run before output):
+  → Does this song have a clear emotional climb? YES / NO
+  → Is the bridge the emotional peak? YES / NO
+  → Does Chorus 2 hit harder than Chorus 1? YES / NO
+  If any answer is NO → revise before output.
+
+──────────────────────────────────
+V5 VOCAL FLOW ENGINE (MANDATORY):
+Every line must be written for VOCAL RHYTHM first — how it sits on the beat — not just for meaning. A line that reads beautifully but cannot be performed is a failed line.
+
+SYLLABLE BALANCE:
+  - Verse lines: 6–14 syllables per line (ideal: 8–12)
+  - Hook/Chorus lines: 4–10 syllables per line (ideal: 5–8)
+  - Bridge lines: 4–10 syllables per line
+  - Lines exceeding 16 syllables must be split or compressed.
+  - Lines under 4 syllables must carry extreme emotional weight to justify their shortness.
+
+RHYTHMIC POCKETING:
+  - Every line must end with a natural performance pause: a strong final syllable, a breath gap, or a setup for an ad-lib.
+  - Pattern model: STATEMENT → pause → echo/ad-lib slot
+  - No line should run so long that it leaves no room to breathe.
+
+INTERNAL RHYTHM SHIFT (per verse):
+  - Every 2–4 lines: vary the cadence, shift the stress pattern, change the syllable landing.
+  - A verse with identical rhythm on every line fails the flow engine check.
+
+AFROBEATS SWING RULE:
+  - Lines must allow for off-beat delivery and natural syncopation.
+  - Write for the groove, not for the grammar.
+  - Favor lines where the last strong syllable lands on a natural downbeat or after-beat.
+
+CHORUS DESIGN RULE:
+  - Hook lines must be simpler and shorter than verse lines.
+  - Favor repeated phonetic hooks: assonance, internal rhyme, chantable endings.
+  - The chorus should feel singable by an entire crowd after one listen.
+
+FORBIDDEN:
+  ✗ Long academic sentences (3+ clauses) as lyric lines.
+  ✗ Lines with no natural pause or breath gap.
+  ✗ Identical syllable rhythm on every line in the same verse.
+  ✗ Chorus lines longer than verse lines.
+  ✗ Lines that "read" well but cannot be performed rhythmically.
+
+SILENT INTERNAL CHECK (run before output):
+  → Can every line be performed rhythmically over an Afrobeats groove? YES / NO
+  → Does each verse have internal rhythm variation? YES / NO
+  → Are chorus lines shorter and more chantable than verse lines? YES / NO
+  If any answer is NO → rewrite the failing lines before output.
 
 OUTPUT FORMAT: Return valid JSON only. No text outside the JSON.
 NOTE: Section line counts are set by the DIVERSITY ENGINE directive — follow those targets exactly.
@@ -1955,18 +2038,17 @@ function scoreLyricsDraft(draft: SongDraft, profile: DiversityProfile): Validati
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-// LYRICS — two models race in parallel; the higher quality-score wins.
-//   Qwen3.5-122B:     dense instruction-following, strong at honoring the
-//                     intelligence layers (keeper line, dialect, structure).
-//   Llama-4-Maverick: high-temperature creative co-writer; best at edgy,
-//                     quotable, performance-ready hooks. Acts as both the
-//                     parallel competitor and the strict-retry fallback.
-// FLOW   — Llama-3.3-70B primary, Llama-4-Maverick backup (unchanged).
+// LYRICS — Qwen3.5-122B is the sole primary: 122B parameters, purpose-built
+//   for dense instruction-following. It reliably honors keeper-line placement,
+//   dialect rules, line-count targets, and JSON schema constraints better than
+//   smaller models. Llama-4-Maverick (17B MoE) is the emergency fallback only
+//   — it runs only if Qwen fails outright (API error / timeout).
+// FLOW   — Llama-4-Maverick primary (faster for shorter production brief).
 
 const QWEN_LYRICS_MODEL      = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",      temperature: 0.88 };
 const MAVERICK_LYRICS_MODEL  = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.92 };
-const LLAMA_70B_FLOW_MODEL   = { id: "meta/llama-3.3-70b-instruct",             name: "Llama-3.3-70B",     temperature: 0.80 };
-const MAVERICK_FLOW_BACKUP   = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.78 };
+const LLAMA_70B_FLOW_MODEL   = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick",  temperature: 0.78 };
+const MAVERICK_FLOW_BACKUP   = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",      temperature: 0.75 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -2106,7 +2188,7 @@ router.post("/generate-song", async (req, res) => {
         temperature: model.temperature,
         top_p: 0.95,
         max_tokens: 4000,
-      });
+      }, { signal: AbortSignal.timeout(35_000) });
       const raw  = response.choices[0]?.message?.content ?? "";
       const draft = parseJson(raw) as SongDraft | null;
       const validation: ValidationResult = draft
@@ -2180,7 +2262,7 @@ router.post("/generate-song", async (req, res) => {
           ],
           temperature: model.temperature,
           top_p: 0.9,
-          max_tokens: 2800,
+          max_tokens: 1500,
         });
         const raw = response.choices[0]?.message?.content ?? "";
         const result = parseJson(raw);
@@ -2205,71 +2287,65 @@ router.post("/generate-song", async (req, res) => {
   try {
     const userPrompt = buildUserPrompt(promptParams, false);
 
-    // ── Round 1 — Qwen and Maverick race in parallel ───────────────────
-    // Both models receive the same intelligence-layer-loaded prompt. We
-    // wait for both, score each draft (structural + deep checks), and
-    // pick the winner. Running them concurrently keeps wall-time roughly
-    // equal to a single model call while doubling the chance of getting a
-    // draft that fully honors the structure + intelligence layers.
+    // ── Step 1 — Qwen3.5-122B primary (instruction-following priority) ─
+    // Qwen3.5-122B (122B params) is the best model available for honoring
+    // dense, multi-rule prompts: keeper-line placement, dialect depth,
+    // exact line counts, and the full JSON schema. It runs alone with a
+    // generous 35 s window so it is never cut off mid-generation.
+    logger.info({ model: QWEN_LYRICS_MODEL.name }, "Starting Qwen primary lyrics generation");
+    const qwenResult = await callLyricsModel(QWEN_LYRICS_MODEL, userPrompt);
     logger.info(
-      { models: [QWEN_LYRICS_MODEL.name, MAVERICK_LYRICS_MODEL.name] },
-      "Starting parallel lyrics race (round 1)",
-    );
-    const [qwenResult, maverickResult] = await Promise.all([
-      callLyricsModel(QWEN_LYRICS_MODEL,     userPrompt),
-      callLyricsModel(MAVERICK_LYRICS_MODEL, userPrompt),
-    ]);
-
-    logger.info(
-      {
-        qwen:     { score: qwenResult.validation.qualityScore,     valid: qwenResult.validation.valid,     failures: qwenResult.validation.failures, soft: qwenResult.validation.softIssues },
-        maverick: { score: maverickResult.validation.qualityScore, valid: maverickResult.validation.valid, failures: maverickResult.validation.failures, soft: maverickResult.validation.softIssues },
-      },
-      "Lyrics race round 1 complete",
+      { score: qwenResult.validation.qualityScore, valid: qwenResult.validation.valid, failures: qwenResult.validation.failures, soft: qwenResult.validation.softIssues },
+      "Qwen primary complete",
     );
 
-    let bestSoFar = pickBestDraft([qwenResult, maverickResult]);
-    let finalLyricsDraft: SongDraft | null = bestSoFar?.validation.valid ? bestSoFar.draft : null;
+    let bestSoFar = qwenResult.draft ? qwenResult : null;
+    let finalLyricsDraft: SongDraft | null = qwenResult.validation.valid ? qwenResult.draft : null;
 
-    // ── Round 2 — strict retry on the better-performing model ──────────
-    // If neither draft fully passed (structure + deep checks), give the
-    // model that scored higher a second shot with the strict prompt.
-    // Avoids burning credits re-running the loser; usually fixes near-misses
-    // (off-by-one section length, missing keeper line, etc.).
-    if (!finalLyricsDraft) {
-      const retryModel = (bestSoFar?.model === QWEN_LYRICS_MODEL.name)
-        ? QWEN_LYRICS_MODEL
-        : MAVERICK_LYRICS_MODEL;
+    // ── Step 2 — Strict retry if Qwen had structural issues ────────────
+    // If Qwen returned a draft but failed structural checks, give it a
+    // second shot with the strict prompt before falling back to Maverick.
+    if (!finalLyricsDraft && qwenResult.draft) {
       logger.warn(
-        { retryModel: retryModel.name, bestScore: bestSoFar?.validation.qualityScore ?? 0 },
-        "Round 1 had quality issues — running strict retry on the higher-scoring model",
+        { score: qwenResult.validation.qualityScore, failures: qwenResult.validation.failures },
+        "Qwen draft had quality issues — running strict retry",
       );
       const strictPrompt = buildUserPrompt(promptParams, true);
-      const retryResult  = await callLyricsModel(retryModel, strictPrompt);
+      const retryResult  = await callLyricsModel(QWEN_LYRICS_MODEL, strictPrompt);
       logger.info(
-        { score: retryResult.validation.qualityScore, valid: retryResult.validation.valid, failures: retryResult.validation.failures, soft: retryResult.validation.softIssues },
-        "Strict retry complete",
+        { score: retryResult.validation.qualityScore, valid: retryResult.validation.valid, failures: retryResult.validation.failures },
+        "Qwen strict retry complete",
       );
-
-      // Final pick is whichever of the three attempts scored highest.
-      const winner = pickBestDraft([qwenResult, maverickResult, retryResult]);
+      const winner = pickBestDraft([qwenResult, retryResult]);
       if (winner) {
         bestSoFar = winner;
-        finalLyricsDraft = winner.draft;
-        if (!winner.validation.valid) {
-          logger.warn(
-            { model: winner.model, failures: winner.validation.failures, soft: winner.validation.softIssues, score: winner.validation.qualityScore },
-            "All lyrics attempts had issues — returning highest-scoring draft anyway",
-          );
-        } else {
-          logger.info({ model: winner.model, score: winner.validation.qualityScore }, "Strict retry produced a clean draft");
-        }
+        finalLyricsDraft = winner.validation.valid ? winner.draft : (winner.draft ?? null);
       }
-    } else {
+    }
+
+    // ── Step 3 — Maverick emergency fallback (only if Qwen failed) ─────
+    // Maverick only runs if Qwen produced no draft at all (API error /
+    // hard timeout). Its output is used as-is — no strict retry.
+    if (!bestSoFar || !bestSoFar.draft) {
+      logger.warn("Qwen returned no draft — engaging Maverick emergency fallback");
+      const maverickResult = await callLyricsModel(MAVERICK_LYRICS_MODEL, userPrompt);
       logger.info(
-        { model: bestSoFar?.model, score: bestSoFar?.validation.qualityScore },
-        "Lyrics race produced a clean draft on round 1 — no retry needed",
+        { score: maverickResult.validation.qualityScore, valid: maverickResult.validation.valid },
+        "Maverick emergency fallback complete",
       );
+      if (maverickResult.draft) {
+        bestSoFar = maverickResult;
+        finalLyricsDraft = maverickResult.draft;
+      }
+    }
+
+    if (bestSoFar && !finalLyricsDraft && bestSoFar.draft) {
+      // Use best available even if not perfectly valid rather than returning nothing.
+      logger.warn(
+        { model: bestSoFar.model, score: bestSoFar.validation.qualityScore },
+        "No fully-valid draft — returning highest-scoring draft available",
+      );
+      finalLyricsDraft = bestSoFar.draft;
     }
 
     if (!finalLyricsDraft) {
@@ -2278,8 +2354,12 @@ router.post("/generate-song", async (req, res) => {
     }
 
     // ── Qwen flow/production details — runs after lyrics are finalized ────
+    // Cap at 28 s so the total request stays well under 60 s.
     logger.info("Starting Qwen3.5-122B flow/production details generation");
-    const flowData = await callFlowModel(finalLyricsDraft);
+    const flowData = await Promise.race([
+      callFlowModel(finalLyricsDraft),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 25_000)),
+    ]);
 
     if (flowData) {
       logger.info("Qwen flow details generated — merging with lyrics draft");
@@ -2529,7 +2609,7 @@ router.post("/harden-lyrics", requireAuth, attachPlanFromDb, requireFeature("can
     logger.info({ genre, mood, languageFlavor }, "Starting Make It Harder rewrite");
 
     const hardenResponse = await ai.chat.completions.create({
-      model: MAVERICK_LYRICS_BACKUP.id,
+      model: QWEN_LYRICS_MODEL.id,
       messages: [
         { role: "system", content: HARDER_REWRITER_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -2537,7 +2617,7 @@ router.post("/harden-lyrics", requireAuth, attachPlanFromDb, requireFeature("can
       temperature: 0.9,
       top_p: 0.95,
       max_tokens: 3000,
-    });
+    }, { signal: AbortSignal.timeout(35_000) });
 
     const raw = hardenResponse.choices[0]?.message?.content ?? "";
     const hardened = parseHardenJson(raw);
@@ -2801,7 +2881,7 @@ router.post("/catchier-lyrics", requireAuth, attachPlanFromDb, requireFeature("c
     logger.info({ genre, mood, languageFlavor }, "Starting Make It Catchier rewrite");
 
     const catchierResponse = await ai.chat.completions.create({
-      model: MAVERICK_LYRICS_BACKUP.id,
+      model: QWEN_LYRICS_MODEL.id,
       messages: [
         { role: "system", content: CATCHIER_REWRITER_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -2809,7 +2889,7 @@ router.post("/catchier-lyrics", requireAuth, attachPlanFromDb, requireFeature("c
       temperature: 0.88,
       top_p: 0.95,
       max_tokens: 3000,
-    });
+    }, { signal: AbortSignal.timeout(35_000) });
 
     const raw = catchierResponse.choices[0]?.message?.content ?? "";
     const catchier = parseCatchierjson(raw);
@@ -3045,7 +3125,7 @@ router.post("/rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeature("ca
     logger.info({ genre, mood, languageFlavor }, "Starting lyrics humanization (rewrite)");
 
     const rewriteResponse = await ai.chat.completions.create({
-      model: MAVERICK_LYRICS_BACKUP.id,
+      model: QWEN_LYRICS_MODEL.id,
       messages: [
         { role: "system", content: REWRITER_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -3053,7 +3133,7 @@ router.post("/rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeature("ca
       temperature: 0.85,
       top_p: 0.95,
       max_tokens: 3000,
-    });
+    }, { signal: AbortSignal.timeout(35_000) });
 
     const raw = rewriteResponse.choices[0]?.message?.content ?? "";
     const rewritten = parseRewriteJson(raw);
@@ -3085,6 +3165,179 @@ router.post("/rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeature("ca
       res.status(429).json({ error: "The AI is busy right now. Please wait a moment and try again." });
     } else {
       res.status(500).json({ error: "Lyrics rewriting failed. Please try again." });
+    }
+  }
+});
+
+// ─── Smart Rewrite ───────────────────────────────────────────────────────────
+// Free-text targeted edit: only touches what the instruction explicitly names.
+// Preserves all other sections, line counts, and the keeper line verbatim.
+
+const SMART_REWRITER_SYSTEM_PROMPT = `You are a precision surgical lyric editor for Afrobeats, Afropop, and African music.
+
+The artist gives you an INSTRUCTION describing exactly which part of the song to change and how.
+Your job is to apply ONLY that targeted change — nothing else.
+
+SURGICAL EDITING RULES:
+1. Read the instruction carefully and identify which section(s) it targets.
+2. Only rewrite lines in the targeted section(s). Leave all other sections UNTOUCHED — copy them verbatim.
+3. Preserve every line count exactly. If a section has 4 lines, return exactly 4 lines.
+4. Preserve the keeper line exactly as given unless the instruction explicitly says to change it.
+5. Honor the dialect, language flavor, and song context throughout the targeted edit.
+6. Do not improve, polish, or "help" sections that were not mentioned in the instruction.
+7. Apply the instruction literally and precisely — no creative liberties outside the target.
+
+OUTPUT FORMAT — return ONLY this JSON object, no text before or after:
+{
+  "intro":   [...] or null if section was not changed,
+  "hook":    [...] or null if section was not changed,
+  "verse1":  [...] or null if section was not changed,
+  "verse2":  [...] or null if section was not changed,
+  "bridge":  [...] or null if section was not changed,
+  "outro":   [...] or null if section was not changed,
+  "keeperLine": "..." or null if not changed
+}
+
+Return null for any section you did NOT modify. Only return arrays for sections you actually changed.`;
+
+router.post("/smart-rewrite-lyrics", requireAuth, attachPlanFromDb, requireFeature("canRewriteLyrics"), async (req, res) => {
+  const {
+    draft, instruction, genre, mood, languageFlavor, dialectDepth, clarityMode,
+    lyricalDepth, genderVoiceModel, performanceFeel, style,
+  } = req.body as {
+    draft?: Record<string, unknown>;
+    instruction?: string;
+    genre?: string;
+    mood?: string;
+    languageFlavor?: string;
+    dialectDepth?: string;
+    clarityMode?: string;
+    lyricalDepth?: string;
+    genderVoiceModel?: string;
+    performanceFeel?: string;
+    style?: string;
+  };
+
+  if (!draft || typeof draft !== "object") {
+    res.status(400).json({ error: "draft is required" });
+    return;
+  }
+  if (!instruction || typeof instruction !== "string" || instruction.trim().length < 5) {
+    res.status(400).json({ error: "instruction is required (at least 5 characters)" });
+    return;
+  }
+
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) {
+    logger.error("NVIDIA_API_KEY not configured");
+    res.status(500).json({ error: "AI service not configured" });
+    return;
+  }
+
+  const formatSection = (label: string, lines: unknown): string => {
+    if (!Array.isArray(lines) || lines.length === 0) return "";
+    return `[${label}]\n${(lines as string[]).join("\n")}`;
+  };
+
+  const lyricsText = [
+    formatSection("Intro",   draft.intro),
+    formatSection("Chorus",  draft.hook),
+    formatSection("Verse 1", draft.verse1),
+    formatSection("Verse 2", draft.verse2),
+    formatSection("Bridge",  draft.bridge),
+    formatSection("Outro",   draft.outro),
+  ].filter(Boolean).join("\n\n");
+
+  const keeperLine = typeof draft.keeperLine === "string" ? draft.keeperLine : "";
+
+  const userPrompt = [
+    `SMART REWRITE — TARGETED EDIT`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Genre: ${genre ?? "Afrobeats"}`,
+    `Mood: ${mood ?? "Uplifting"}`,
+    `Language: ${languageFlavor ?? "Global English"}`,
+    dialectDepth ? `Dialect Depth: ${dialectDepth}` : "",
+    clarityMode  ? `Clarity Mode: ${clarityMode}`   : "",
+    lyricalDepth ? `Lyrical Depth: ${lyricalDepth}` : "",
+    performanceFeel ? `Performance Feel: ${performanceFeel}` : "",
+    genderVoiceModel ? `Voice Model: ${genderVoiceModel}` : "",
+    style?.trim() ? `Sound Reference: ${style.trim()}` : "",
+    keeperLine ? `Keeper Line (protect unless instructed to change): "${keeperLine}"` : "",
+    ``,
+    `ARTIST'S INSTRUCTION:`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    instruction.trim(),
+    ``,
+    `CURRENT LYRICS:`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    lyricsText,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ``,
+    `Apply ONLY the artist's instruction above. Return null for every section you did not change.`,
+    `Return ONLY the JSON object. No text before or after.`,
+  ].filter((l) => l !== null).join("\n");
+
+  const ai = new OpenAI({
+    apiKey,
+    baseURL: "https://integrate.api.nvidia.com/v1",
+  });
+
+  const parseSmartJson = (raw: string): Record<string, unknown> | null => {
+    try {
+      const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      return JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    logger.info({ genre, mood, instruction: instruction.trim().slice(0, 80) }, "Starting smart rewrite");
+
+    const smartResponse = await ai.chat.completions.create({
+      model: QWEN_LYRICS_MODEL.id,
+      messages: [
+        { role: "system", content: SMART_REWRITER_SYSTEM_PROMPT },
+        { role: "user",   content: userPrompt },
+      ],
+      temperature: 0.82,
+      top_p: 0.95,
+      max_tokens: 3000,
+    }, { signal: AbortSignal.timeout(35_000) });
+
+    const raw = smartResponse.choices[0]?.message?.content ?? "";
+    const edited = parseSmartJson(raw);
+
+    if (!edited) {
+      logger.error({ raw: raw.slice(0, 200) }, "Smart rewrite returned unreadable output");
+      res.status(500).json({ error: "Smart rewrite returned unreadable output. Please try again." });
+      return;
+    }
+
+    // Merge only the sections Qwen actually changed (non-null arrays)
+    const mergedDraft = {
+      ...draft,
+      ...(typeof edited.keeperLine === "string" && edited.keeperLine.trim()
+        ? { keeperLine: edited.keeperLine }
+        : {}),
+      ...(Array.isArray(edited.intro)  && edited.intro.length  > 0 ? { intro:  edited.intro  } : {}),
+      ...(Array.isArray(edited.hook)   && edited.hook.length   > 0 ? { hook:   edited.hook   } : {}),
+      ...(Array.isArray(edited.verse1) && edited.verse1.length > 0 ? { verse1: edited.verse1 } : {}),
+      ...(Array.isArray(edited.verse2) && edited.verse2.length > 0 ? { verse2: edited.verse2 } : {}),
+      ...(Array.isArray(edited.bridge) && edited.bridge.length > 0 ? { bridge: edited.bridge } : {}),
+      ...(Array.isArray(edited.outro)  && edited.outro.length  > 0 ? { outro:  edited.outro  } : {}),
+    };
+
+    logger.info("Smart rewrite completed successfully");
+    res.json({ draft: mergedDraft });
+  } catch (err) {
+    logger.error({ err }, "Smart rewrite error");
+    const status = (err as { status?: number }).status;
+    if (status === 429) {
+      res.status(429).json({ error: "The AI is busy right now. Please wait a moment and try again." });
+    } else {
+      res.status(500).json({ error: "Smart rewrite failed. Please try again." });
     }
   }
 });

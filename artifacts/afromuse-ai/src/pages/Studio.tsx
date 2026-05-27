@@ -5,7 +5,7 @@ import {
   ChevronDown, Volume2, Download, Check, Lock,
   Mic2, Wand2, FileText, Zap, Flame, Play,
   SkipForward, Sliders, Radio, Guitar,
-  VolumeX, Volume1, ChevronRight, Crown, Dna, RotateCcw, Globe,
+  VolumeX, Volume1, ChevronRight, Crown, Dna, RotateCcw, Globe, PenLine,
 } from "lucide-react";
 import { SubscriptionModal } from "@/components/ui/SubscriptionModal";
 import AudioStudioV2, { type AudioStudioV2Handle, type QuickMode } from "@/components/studio/AudioStudioV2";
@@ -165,6 +165,12 @@ export default function Studio() {
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [isHardening, setIsHardening] = useState(false);
   const [isCatchifying, setIsCatchifying] = useState(false);
+  const [isSmartRewriting, setIsSmartRewriting] = useState(false);
+  const [smartRewriteInstruction, setSmartRewriteInstruction] = useState("");
+  const [showSmartRewriteInput, setShowSmartRewriteInput] = useState(false);
+  const [inlineEditSectionId, setInlineEditSectionId] = useState<string | null>(null);
+  const [inlineEditInstruction, setInlineEditInstruction] = useState("");
+  const [isInlineEditing, setIsInlineEditing] = useState(false);
   const [previousDraft, setPreviousDraft] = useState<SongDraft | null>(null);
   const [mutedStems, setMutedStems] = useState<Record<string, boolean>>({});
   const [stemVolumes, setStemVolumes] = useState<Record<string, number>>({
@@ -387,6 +393,75 @@ export default function Studio() {
       setPreviousDraft(null);
       toast({ title: "Make It Harder failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
     } finally { setIsHardening(false); }
+  };
+
+  const handleSmartRewrite = async () => {
+    if (!draft || isSmartRewriting || smartRewriteInstruction.trim().length < 5) return;
+    const snapshot = draft;
+    setPreviousDraft(snapshot);
+    setIsSmartRewriting(true);
+    setSaved(false);
+    const { languageFlavor: apiLanguageFlavor } = getApiLanguageParams(languageFlavor);
+    try {
+      const res = await fetch("/api/smart-rewrite-lyrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft, instruction: smartRewriteInstruction.trim(),
+          genre, mood, languageFlavor: apiLanguageFlavor, dialectDepth, clarityMode,
+          lyricalDepth, genderVoiceModel, performanceFeel,
+          style: style || undefined,
+        }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { error?: string }).error ?? "Smart rewrite failed"); }
+      const data = await res.json() as { draft: SongDraft };
+      setDraft(data.draft);
+      setShowSmartRewriteInput(false);
+      setSmartRewriteInstruction("");
+      toast({
+        title: "Smart rewrite applied.",
+        description: "Only the targeted section was changed.",
+        action: <ToastAction altText="Undo" onClick={() => { setDraft(snapshot); setPreviousDraft(null); }}>Undo</ToastAction>,
+      });
+    } catch (err) {
+      setPreviousDraft(null);
+      toast({ title: "Smart rewrite failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+    } finally { setIsSmartRewriting(false); }
+  };
+
+  const handleInlineEdit = async (sectionId: string, sectionLabel: string) => {
+    if (!draft || isInlineEditing || inlineEditInstruction.trim().length < 3) return;
+    const instruction = `[${sectionLabel}] — ${inlineEditInstruction.trim()}`;
+    const snapshot = draft;
+    setPreviousDraft(snapshot);
+    setIsInlineEditing(true);
+    setSaved(false);
+    const { languageFlavor: apiLanguageFlavor } = getApiLanguageParams(languageFlavor);
+    try {
+      const res = await fetch("/api/smart-rewrite-lyrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft, instruction,
+          genre, mood, languageFlavor: apiLanguageFlavor, dialectDepth, clarityMode,
+          lyricalDepth, genderVoiceModel, performanceFeel,
+          style: style || undefined,
+        }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { error?: string }).error ?? "Edit failed"); }
+      const data = await res.json() as { draft: SongDraft };
+      setDraft(data.draft);
+      setInlineEditSectionId(null);
+      setInlineEditInstruction("");
+      toast({
+        title: `${sectionLabel} updated.`,
+        description: "Only this section was changed.",
+        action: <ToastAction altText="Undo" onClick={() => { setDraft(snapshot); setPreviousDraft(null); }}>Undo</ToastAction>,
+      });
+    } catch (err) {
+      setPreviousDraft(null);
+      toast({ title: "Edit failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+    } finally { setIsInlineEditing(false); }
   };
 
   const copyToClipboard = async () => {
@@ -1049,6 +1124,56 @@ export default function Studio() {
                 {!hasAccess("Creator Pro") && <Lock className="w-3 h-3 ml-auto text-amber-500/50" />}
               </button>
 
+              {/* Smart Rewrite — expandable targeted edit */}
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!hasAccess("Creator Pro")) { setShowSubscriptionModal(true); return; }
+                    if (!draft) return;
+                    setShowSmartRewriteInput((v) => !v);
+                  }}
+                  disabled={!draft || isSmartRewriting}
+                  className="w-full flex items-center gap-2.5 h-9 px-3 rounded-xl bg-white/4 border border-white/6 text-xs font-semibold text-white/55 hover:text-white hover:bg-white/8 hover:border-white/12 transition-all disabled:opacity-35 disabled:cursor-not-allowed"
+                >
+                  {isSmartRewriting ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <PenLine className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
+                  Smart Rewrite
+                  {!hasAccess("Creator Pro") && <Lock className="w-3 h-3 ml-auto text-amber-500/50" />}
+                </button>
+                {showSmartRewriteInput && (
+                  <div className="rounded-xl bg-white/4 border border-white/8 p-2.5 space-y-2">
+                    <textarea
+                      className="w-full bg-transparent text-xs text-white/80 placeholder:text-white/25 resize-none outline-none leading-relaxed"
+                      rows={3}
+                      placeholder={'e.g. "Make the bridge more spiritual" or "Add more Lagos street slang to verse 2"'}
+                      value={smartRewriteInstruction}
+                      onChange={(e) => setSmartRewriteInstruction(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSmartRewrite(); }}
+                      disabled={isSmartRewriting}
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSmartRewrite}
+                        disabled={isSmartRewriting || smartRewriteInstruction.trim().length < 5}
+                        className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isSmartRewriting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        {isSmartRewriting ? "Applying…" : "Apply"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowSmartRewriteInput(false); setSmartRewriteInstruction(""); }}
+                        className="text-[11px] text-white/30 hover:text-white/55 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={() => { if (draft) handleSendToAudio("instrumental"); }}
@@ -1418,6 +1543,53 @@ export default function Studio() {
                               {locked && <Lock className="w-3 h-3 ml-auto text-amber-500/50" />}
                             </button>
                           ))}
+                        </div>
+                        {/* Smart Rewrite (mobile) */}
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!hasAccess("Creator Pro")) { setShowSubscriptionModal(true); return; }
+                              setShowSmartRewriteInput((v) => !v);
+                            }}
+                            disabled={isSmartRewriting}
+                            className="w-full flex items-center gap-2 h-10 px-3 rounded-xl bg-white/4 border border-white/6 text-xs font-semibold text-white/55 hover:text-white hover:bg-white/8 transition-all disabled:opacity-35"
+                          >
+                            {isSmartRewriting ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <PenLine className="w-3.5 h-3.5 text-cyan-400" />}
+                            Smart Rewrite
+                            {!hasAccess("Creator Pro") && <Lock className="w-3 h-3 ml-auto text-amber-500/50" />}
+                          </button>
+                          {showSmartRewriteInput && (
+                            <div className="rounded-xl bg-white/4 border border-white/8 p-2.5 space-y-2">
+                              <textarea
+                                className="w-full bg-transparent text-xs text-white/80 placeholder:text-white/25 resize-none outline-none leading-relaxed"
+                                rows={3}
+                                placeholder={'e.g. "Make the bridge more spiritual" or "Add more Lagos street slang to verse 2"'}
+                                value={smartRewriteInstruction}
+                                onChange={(e) => setSmartRewriteInstruction(e.target.value)}
+                                disabled={isSmartRewriting}
+                                autoFocus
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSmartRewrite}
+                                  disabled={isSmartRewriting || smartRewriteInstruction.trim().length < 5}
+                                  className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {isSmartRewriting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                  {isSmartRewriting ? "Applying…" : "Apply"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setShowSmartRewriteInput(false); setSmartRewriteInstruction(""); }}
+                                  className="text-[11px] text-white/30 hover:text-white/55 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -2017,7 +2189,7 @@ export default function Studio() {
                         </div>
                         <div className="p-5 space-y-6">
                           {LYRICS_SECTIONS.map((section) => (
-                            <div key={section.id}>
+                            <div key={section.id} className="group/section">
                               <div className="flex items-center gap-2 mb-2.5 flex-wrap">
                                 <span className={`text-[10px] font-black tracking-widest uppercase px-2.5 py-0.5 rounded-md border ${
                                   section.label === "Chorus"
@@ -2040,7 +2212,68 @@ export default function Studio() {
                                     {section.emotion}
                                   </span>
                                 )}
+                                {/* Inline edit button — appears on section hover */}
+                                <button
+                                  type="button"
+                                  title={`Edit ${section.label}`}
+                                  onClick={() => {
+                                    if (!hasAccess("Creator Pro")) { setShowSubscriptionModal(true); return; }
+                                    if (inlineEditSectionId === section.id) {
+                                      setInlineEditSectionId(null);
+                                      setInlineEditInstruction("");
+                                    } else {
+                                      setInlineEditSectionId(section.id);
+                                      setInlineEditInstruction("");
+                                    }
+                                  }}
+                                  className={`ml-auto flex items-center gap-1 h-6 px-2 rounded-md border text-[10px] font-semibold transition-all ${
+                                    inlineEditSectionId === section.id
+                                      ? "opacity-100 bg-cyan-500/20 border-cyan-500/35 text-cyan-400"
+                                      : "opacity-0 group-hover/section:opacity-100 bg-white/5 border-white/10 text-white/35 hover:text-cyan-400 hover:border-cyan-500/30 hover:bg-cyan-500/10"
+                                  }`}
+                                >
+                                  <PenLine className="w-3 h-3" />
+                                  Edit
+                                </button>
                               </div>
+
+                              {/* Inline edit input for this section */}
+                              {inlineEditSectionId === section.id && (
+                                <div className="mb-3 rounded-xl bg-white/4 border border-cyan-500/20 p-2.5 space-y-2">
+                                  <p className="text-[10px] text-cyan-400/70 font-medium">
+                                    What should change in this {section.label}?
+                                  </p>
+                                  <textarea
+                                    className="w-full bg-transparent text-xs text-white/80 placeholder:text-white/25 resize-none outline-none leading-relaxed"
+                                    rows={2}
+                                    placeholder={`e.g. "Make it more emotional" · "Add more urgency" · "Use Yoruba slang"`}
+                                    value={inlineEditInstruction}
+                                    onChange={(e) => setInlineEditInstruction(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleInlineEdit(section.id, section.label); }}
+                                    disabled={isInlineEditing}
+                                    autoFocus
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInlineEdit(section.id, section.label)}
+                                      disabled={isInlineEditing || inlineEditInstruction.trim().length < 3}
+                                      className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                      {isInlineEditing ? <Loader2 className="w-3 h-3 animate-spin" /> : <PenLine className="w-3 h-3" />}
+                                      {isInlineEditing ? "Applying…" : "Apply"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setInlineEditSectionId(null); setInlineEditInstruction(""); }}
+                                      className="text-[11px] text-white/30 hover:text-white/55 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="space-y-1 pl-1">
                                 {section.lines.map((line, i) => (
                                   <p key={i} className={`text-sm leading-relaxed ${
