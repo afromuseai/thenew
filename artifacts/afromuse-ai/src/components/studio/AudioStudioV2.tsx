@@ -12,6 +12,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useEngineStatus } from "@/hooks/useEngineStatus";
 import type { SongDraft } from "@/lib/songGenerator";
 import { formatDraftForClipboard } from "@/lib/songGenerator";
+import {
+  inferLyricsEmotions,
+  decorateSectionLabel,
+  type EmotionTag,
+} from "@/lib/lyricsEmotion";
 import { buildFullIntelligence, type FullIntelligence, type ExportNoteBlock } from "@/lib/audioIntelligence";
 import AudioPlayer from "@/components/audio/AudioPlayer";
 
@@ -280,23 +285,40 @@ function hashString(s: string): number {
  * lyrics with [Section] markers, in the canonical AfroMuse order:
  *   Intro → Chorus → Verse 1 → Chorus → Verse 2 → Chorus → Bridge → Outro.
  */
-function extractLyricsForTextarea(draft: SongDraft | null): string {
+function extractLyricsForTextarea(draft: SongDraft | null, mood: string = ""): string {
   if (!draft) return "";
+
+  // Infer per-section emotion tags so labels carry the performance intent
+  // through to the audio textarea — e.g. [Chorus - Anthemic / Energetic]
+  // instead of a bare [Chorus]. The same map is also sent to the backend
+  // alongside lyricsSections so the AI music model receives the same hints.
+  const emotions = inferLyricsEmotions(
+    {
+      intro:  draft.intro  ?? [],
+      hook:   draft.hook   ?? [],
+      verse1: draft.verse1 ?? [],
+      verse2: draft.verse2 ?? [],
+      bridge: draft.bridge ?? [],
+      outro:  draft.outro  ?? [],
+    },
+    mood,
+  );
+
   const out: string[] = [];
-  const push = (label: string, lines?: string[]) => {
+  const push = (label: string, lines?: string[], emotion?: EmotionTag) => {
     if (!lines || lines.length === 0) return;
-    out.push(`[${label}]`, ...lines, "");
+    out.push(`[${decorateSectionLabel(label, emotion)}]`, ...lines, "");
   };
   const bridgeLabel =
     draft.diversityReport?.dnaMode === "CHAOS MODE" ? "Break" : "Bridge";
-  push("Intro",   draft.intro);
-  push("Chorus",  draft.hook);
-  push("Verse 1", draft.verse1);
-  push("Chorus",  draft.hook);
-  push("Verse 2", draft.verse2);
-  push("Chorus",  draft.hook);
-  push(bridgeLabel, draft.bridge);
-  push("Outro",   draft.outro);
+  push("Intro",   draft.intro,  emotions.intro);
+  push("Chorus",  draft.hook,   emotions.hook);
+  push("Verse 1", draft.verse1, emotions.verse1);
+  push("Chorus",  draft.hook,   emotions.hook);
+  push("Verse 2", draft.verse2, emotions.verse2);
+  push("Chorus",  draft.hook,   emotions.hook);
+  push(bridgeLabel, draft.bridge, emotions.bridge);
+  push("Outro",   draft.outro,  emotions.outro);
   return out.join("\n").trim();
 }
 
@@ -306,8 +328,8 @@ function extractLyricsForTextarea(draft: SongDraft | null): string {
  * Keeping the old name as an alias makes the call sites unambiguous and avoids
  * a sweeping rename.
  */
-function extractLyricsText(draft: SongDraft | null, _genre: string, _mood: string): string {
-  return extractLyricsForTextarea(draft);
+function extractLyricsText(draft: SongDraft | null, _genre: string, mood: string): string {
+  return extractLyricsForTextarea(draft, mood);
 }
 
 /**
@@ -1559,7 +1581,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
   useEffect(() => {
     if (!useGeneratedLyrics || !draft) return;
     const pn = draft.productionNotes ?? {};
-    setAudioLyrics(extractLyricsForTextarea(draft));
+    setAudioLyrics(extractLyricsForTextarea(draft, mood));
     if (draft.title)  setAudioTrackTitle(draft.title);
     if (pn.energy)    setEnergyLevel(pn.energy);
     const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
@@ -1600,7 +1622,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
     //
     // BPM and Key are deliberately left alone — those stay user-controlled.
     const pn = draft.productionNotes ?? {};
-    setAudioLyrics(extractLyricsForTextarea(draft));
+    setAudioLyrics(extractLyricsForTextarea(draft, mood));
     if (draft.title)  setAudioTrackTitle(draft.title);
     if (pn.energy)    setEnergyLevel(pn.energy);
     const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
@@ -1652,7 +1674,7 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
       // big "Use Studio Lyrics" button or flip the toggle. BPM and Key are
       // intentionally left alone in both paths.
       const pn = draft.productionNotes ?? {};
-      setAudioLyrics(extractLyricsForTextarea(draft));
+      setAudioLyrics(extractLyricsForTextarea(draft, mood));
       if (draft.title)  setAudioTrackTitle(draft.title);
       if (pn.energy)    setEnergyLevel(pn.energy);
       const styleSummary = summarizeDraftForStyleDirection(draft, genre, mood, 1000);
@@ -1878,12 +1900,29 @@ const AudioStudioV2 = forwardRef<AudioStudioV2Handle, Props>(function AudioStudi
           outro:  draft.outro  && draft.outro.length  > 0 ? draft.outro  : undefined,
         };
 
+        // Per-section emotion tags — same map the textarea uses to render
+        // [Chorus - Anthemic / Energetic] style labels. Sent to the backend
+        // so the AI music model receives the same performance hints baked
+        // into the lyrics block, not bare [Chorus] markers.
+        const studioSectionEmotions = inferLyricsEmotions(
+          {
+            intro:  draft.intro  ?? [],
+            hook:   draft.hook   ?? [],
+            verse1: draft.verse1 ?? [],
+            verse2: draft.verse2 ?? [],
+            bridge: draft.bridge ?? [],
+            outro:  draft.outro  ?? [],
+          },
+          mood,
+        );
+
         payload = {
           title:          (draft.title || audioTrackTitle).trim() || undefined,
           bpm:            studioBpm,
           key:            studioKey,
           style:          studioStyle || undefined,
           lyricsSections: studioSections,
+          sectionEmotions: studioSectionEmotions,
           buildMode:      "full",
           // Required for backend routing — keep model selection but strip everything else.
           aiMusicModel:   aiMusicModel || undefined,

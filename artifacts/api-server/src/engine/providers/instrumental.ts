@@ -92,6 +92,21 @@ export interface InstrumentalPayload {
     bridge?: string[];
     outro?:  string[];
   };
+  /**
+   * Optional per-section emotion tag (e.g. "Anthemic / Energetic").
+   * When provided, section markers in the prompt become
+   * `[Chorus - Anthemic / Energetic]` instead of bare `[Chorus]`,
+   * carrying the performance intent through to the AI music model.
+   */
+  sectionEmotions?: {
+    intro?:  string;
+    hook?:   string;
+    chorus?: string;
+    verse1?: string;
+    verse2?: string;
+    bridge?: string;
+    outro?:  string;
+  };
   // AI Music API generation controls
   gender?: string;             // "male" | "female" — vocal gender preference
   styleWeight?: number;        // 0–1, adherence to style description
@@ -792,18 +807,29 @@ export function buildInstrumentalDescription(p: InstrumentalPayload): BuiltPromp
  * The chorus leads the song right after the intro so the hook lands immediately,
  * then returns after each verse and the bridge resolves into the outro.
  */
-export function buildLyricsText(secs: NonNullable<InstrumentalPayload["lyricsSections"]>): string {
+export function buildLyricsText(
+  secs: NonNullable<InstrumentalPayload["lyricsSections"]>,
+  emotions?: InstrumentalPayload["sectionEmotions"],
+): string {
   const chorus = secs.chorus?.length ? secs.chorus : secs.hook?.length ? secs.hook : undefined;
   const parts: string[] = [];
 
-  if (secs.intro?.length)  parts.push("[Intro]\n"   + secs.intro.join("\n"));
-  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
-  if (secs.verse1?.length) parts.push("[Verse 1]\n" + secs.verse1.join("\n"));
-  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
-  if (secs.verse2?.length) parts.push("[Verse 2]\n" + secs.verse2.join("\n"));
-  if (chorus?.length)      parts.push("[Chorus]\n"  + chorus.join("\n"));
-  if (secs.bridge?.length) parts.push("[Bridge]\n"  + secs.bridge.join("\n"));
-  if (secs.outro?.length)  parts.push("[Outro]\n"   + secs.outro.join("\n"));
+  // Append the emotion tag to the section label when provided so the AI
+  // music model receives `[Chorus - Anthemic / Energetic]` instead of a
+  // bare `[Chorus]`. This mirrors the textarea the user sees in the UI.
+  const tag = (label: string, emotion?: string): string =>
+    emotion && emotion.trim() ? `[${label} - ${emotion}]` : `[${label}]`;
+
+  const chorusEmotion = emotions?.chorus ?? emotions?.hook;
+
+  if (secs.intro?.length)  parts.push(tag("Intro",   emotions?.intro)  + "\n" + secs.intro.join("\n"));
+  if (chorus?.length)      parts.push(tag("Chorus",  chorusEmotion)    + "\n" + chorus.join("\n"));
+  if (secs.verse1?.length) parts.push(tag("Verse 1", emotions?.verse1) + "\n" + secs.verse1.join("\n"));
+  if (chorus?.length)      parts.push(tag("Chorus",  chorusEmotion)    + "\n" + chorus.join("\n"));
+  if (secs.verse2?.length) parts.push(tag("Verse 2", emotions?.verse2) + "\n" + secs.verse2.join("\n"));
+  if (chorus?.length)      parts.push(tag("Chorus",  chorusEmotion)    + "\n" + chorus.join("\n"));
+  if (secs.bridge?.length) parts.push(tag("Bridge",  emotions?.bridge) + "\n" + secs.bridge.join("\n"));
+  if (secs.outro?.length)  parts.push(tag("Outro",   emotions?.outro)  + "\n" + secs.outro.join("\n"));
 
   return parts.join("\n\n").slice(0, 4800); // chirp-v4-5+ supports up to 5000 chars
 }
@@ -890,7 +916,7 @@ function buildCallbackUrl(): string | null {
 
     // ── MODE: WITH LYRICS ─────────────────────────────────────────────
     if (hasLyrics) {
-      const lyricsText = buildLyricsText(secs);
+      const lyricsText = buildLyricsText(secs, p.sectionEmotions);
 
       requestBody = {
         model,

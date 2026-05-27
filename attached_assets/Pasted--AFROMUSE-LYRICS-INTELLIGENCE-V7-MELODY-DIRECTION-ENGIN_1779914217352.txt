@@ -1,0 +1,161 @@
+🚀 AFROMUSE LYRICS INTELLIGENCE V7
+
+(MELODY DIRECTION ENGINE + VOICE STYLE SIMULATION + HIT SCORING SYSTEM)
+
+👉 This is a single instruction prompt for Replit Agent
+👉 No structure interference
+👉 Only enhances generation quality
+
+🎵 1. MELODY DIRECTION ENGINE
+(Controls HOW lyrics should be sung)
+🎯 PURPOSE
+
+Guide melody flow so lyrics are:
+
+singable
+rhythmic
+naturally musical
+🧠 CORE RULE
+
+Every line must imply a melodic direction, even without audio.
+
+🎼 MELODY CONTROL SYSTEM
+
+Each section must internally follow:
+
+VERSE
+conversational melody
+slight rise at end of lines
+rhythmic delivery (almost spoken-sung)
+CHORUS
+melodic lift (higher energy)
+longer vowel sounds
+smoother phrasing
+BRIDGE
+slower delivery
+emotional stretch
+more spacing between words
+🎚️ SYLLABLE BALANCE RULE
+
+Lines must:
+
+avoid overcrowding
+maintain even syllable spacing
+feel breathable when read aloud
+🎤 VOWEL EXTENSION RULE
+
+Use vowel-friendly words for melody:
+
+“away”, “tonight”, “oh no”, “my love”
+
+Avoid:
+
+harsh consonant stacking
+overly complex phrasing
+🎵 RHYTHM COMPATIBILITY
+
+Lyrics must:
+
+fit Afrobeats bounce (mid-tempo groove)
+allow natural pauses for ad-libs
+align with beat timing (no rushed lines)
+❌ FORBIDDEN
+overly long lines
+robotic phrasing
+lyrics that cannot be sung smoothly
+🎤 2. VOICE STYLE SIMULATION
+(Artist DNA → Vocal Identity)
+🎯 PURPOSE
+
+Make lyrics feel like they were written for a specific vocal personality
+
+🧠 CORE RULE
+
+Every song must reflect a clear vocal identity
+
+🎭 VOICE STYLE TYPES (Examples)
+
+System should adapt tone based on mood:
+
+CONFIDENT / BOLD
+punchy delivery
+short lines
+strong statements
+SMOOTH / SEDUCTIVE
+flowing lines
+softer phrasing
+emotional undertones
+STREET / RAW
+slang
+broken phrasing
+aggressive rhythm
+SPIRITUAL / REFLECTIVE
+deeper words
+slower pacing
+emotional weight
+🎚️ DELIVERY CONTROL
+
+System must:
+
+match word choice to vocal tone
+match rhythm to personality
+maintain consistency across song
+🎤 PERFORMANCE REALISM RULE
+
+Lyrics must feel like:
+
+something a real artist would say
+something that fits their voice style
+❌ FORBIDDEN
+mixing conflicting vocal tones randomly
+inconsistent personality between sections
+generic “AI sounding” phrasing
+🧠 3. HIT SCORING SYSTEM
+(Internal Quality Control Layer)
+🎯 PURPOSE
+
+Evaluate output BEFORE returning to user
+
+🧠 CORE RULE
+
+Every generated song must pass a minimum quality threshold
+
+📊 SCORING CRITERIA (Internal)
+1. HOOK STRENGTH
+Is it memorable?
+Is it repeatable?
+2. EMOTIONAL IMPACT
+Does it feel real?
+Is there emotional progression?
+3. FLOW QUALITY
+Does it read smoothly?
+Is it rhythm-ready?
+4. ORIGINALITY
+Avoid generic phrases
+Avoid repetition without purpose
+5. PERFORMANCE FEEL
+Does it sound like a real artist?
+🧮 DECISION RULE
+
+If output is:
+
+weak
+flat
+repetitive
+not musical
+
+→ system must regenerate internally
+
+🔁 REGENERATION LIMIT
+max 2 retries
+return best version
+⚠️ IMPORTANT
+
+Scoring is:
+
+INTERNAL ONLY
+never shown to user
+
+
+
+AFTER THE INTELLIGENCE I notice that if audio studio fields are filled and maybe you want to open Lyrics studio for reference after you open lyrics studio I found out that everything I wrote in the audio studio is wiped that I need to write all over again, Any field that gets fill or selected should remain untill the user clears it, moving betwen studios should not wide or clear already inputs.

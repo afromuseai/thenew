@@ -1852,19 +1852,38 @@ function buildUserPrompt(
     `language = ${effectiveFlavor}`,
     `style = ${genre}`,
     ...(style?.trim() ? [`artist reference = ${style.trim()}`] : []),
-    ...(notes?.trim() ? [`extra notes = ${notes.trim()}`] : []),
+    // ── USER CREATIVE DIRECTION (PRIORITY DIRECTIVE) ─────────────────────
+    // Promoted out of the weak `extra notes = ...` line that the model was
+    // ignoring. Placed near the top with explicit override authority so the
+    // model treats the user's words as the primary creative driver, not a
+    // nice-to-have hint.
+    ...buildUserCreativeDirectionBlock(notes),
     ...languageFlavorInstruction,
     ...getCommercialModeBlock(params.commercialMode),
     ...getHookEngineBlock(params.hookRepeat ?? "Medium"),
     ...getVerseVariationBlock(),
     ...getAdlibGeneratorBlock(),
     ...getMelodyFriendlyBlock(),
+    // ── AFROMUSE LYRICS INTELLIGENCE V7 ──────────────────────────────────
+    // Three new intelligence layers that ride on top of the existing prompt:
+    //   1. Melody Direction Engine — per-section melodic shape guidance.
+    //   2. Voice Style Simulation  — derives a vocal persona from the inputs
+    //      and locks word-choice + rhythm + personality consistency.
+    // (The third layer, Hit Scoring, runs post-generation in scoreLyricsDraft.)
+    ...getMelodyDirectionBlock(genre, mood, params.performanceFeel ?? "Smooth"),
+    ...getVoiceStyleSimulationBlock(mood, params.performanceFeel ?? "Smooth", params.genderVoiceModel ?? "Random", genre),
     ...getArtistInspirationBlock(params.artistInspiration),
     ...getLyricalDepthBlock(params.lyricalDepth ?? "Balanced"),
     ...getPerformanceFeelBlock(params.performanceFeel ?? "Smooth"),
     ...getVoiceTextureBlock(params.voiceTexture ?? "Balanced"),
     ...buildDiversityDirective(diversityProfile),
     ...(strictMode ? [buildStrictRetryAddendum(diversityProfile)] : []),
+    // ── USER CREATIVE DIRECTION (REINFORCEMENT) ──────────────────────────
+    // Re-stated at the very end of the user prompt so it's the last thing
+    // in the model's working context before generation. This double-anchor
+    // (top + bottom) is the most reliable way to make a smaller LLM
+    // actually honor user-supplied direction.
+    ...buildUserCreativeDirectionReminder(notes),
   ];
 
   return lines.join("\n");
@@ -1895,8 +1914,26 @@ interface ValidationResult {
    * 0–1000 quality score — higher is better. Combines structural validity,
    * soft-issue count, and presence of the intelligence-layer signals
    * (keeper line, all sections populated, no leaked instructions).
+   * Used INTERNALLY to drive the retry loop and pick the winning draft.
    */
   qualityScore?: number;
+  /**
+   * 0–100 commercial hit-potential score with sub-dimensions. Surfaced to the
+   * frontend as part of the AfroMuse Lyrics Intelligence V7 layer. Distinct
+   * from qualityScore: qualityScore answers "did the model follow our spec?",
+   * hitScore answers "how commercially potent are these lyrics?".
+   */
+  hitScore?: HitScoreReport;
+}
+
+export interface HitScoreReport {
+  overall: number; // 0-100 weighted composite
+  hookStrength: number; // 0-100 chantability + repetition + length
+  emotionalImpact: number; // 0-100 sentiment density + imagery
+  flowQuality: number; // 0-100 line-length variance + breathing
+  originality: number; // 0-100 lexical diversity vs cliche
+  performanceFeel: number; // 0-100 adlib + open-vowel ratio
+  notes: string[]; // human-readable highlights and warnings
 }
 
 function validateStructure(draft: SongDraft, profile: DiversityProfile): ValidationResult {
@@ -2034,6 +2071,235 @@ function scoreLyricsDraft(draft: SongDraft, profile: DiversityProfile): Validati
     failures: structural.failures,
     softIssues: deep.issues,
     qualityScore: score,
+    hitScore: computeHitScore(draft),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V7 — LAYER 3: HIT SCORING SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Heuristic, deterministic, fully-offline commercial-potential scorer. Runs on
+// every generated draft and returns a 0-100 composite plus five sub-scores so
+// the UI can show the artist WHY the score is what it is.
+//
+// We deliberately avoid running another LLM here for three reasons:
+//   1. Speed — we already have two LLM calls in the pipeline (lyrics + flow);
+//      a third would push p95 past acceptable response times.
+//   2. Cost — every track generation would trigger another paid call.
+//   3. Reliability — the current heuristics are explainable and testable.
+//
+// The five dimensions are weighted to reflect commercial reality:
+//   Hook strength    35% — the hook is the single biggest predictor of replay.
+//   Emotional impact 20% — songs that connect emotionally win.
+//   Flow quality     15% — bad flow is a hard ceiling on radio play.
+//   Originality      15% — recycled cliche caps the song's reach.
+//   Performance feel 15% — adlibs/vowel openness signal real artist energy.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function pullSectionLines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((l): l is string => typeof l === "string")
+    .map((l) => l.replace(/\([^)]*\)/g, " ").trim()) // strip adlibs from text counts
+    .filter((l) => l.length > 0);
+}
+
+// Like pullSectionLines but PRESERVES the (adlibs) so we can count them.
+// We use this only for the performance-feel dimension; everything else
+// (length / variance / vocab) should ignore adlibs to stay accurate.
+function pullSectionLinesRaw(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((l): l is string => typeof l === "string")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+}
+
+const HIT_CLICHE_PATTERNS = [
+  /\bbaby (girl|boy)\b/i,
+  /\bin the club\b/i,
+  /\bturn it up\b/i,
+  /\bnight is young\b/i,
+  /\bup all night\b/i,
+  /\blove is in the air\b/i,
+  /\blet the music play\b/i,
+  /\bone of a kind\b/i,
+  /\blike no other\b/i,
+  /\btill the morning\b/i,
+];
+
+const HIT_EMOTION_WORDS = [
+  "love","heart","soul","fire","dream","cry","pain","alone","hope","fall",
+  "rise","light","dark","prayer","blessing","faith","run","stay","gone","forever",
+  "broken","whole","free","chains","sky","ocean","fight","hold","never","always",
+  "tonight","forever","goodbye","hello","reach","touch","pray","believe","trust","heal",
+];
+
+const OPEN_VOWELS = /[aeiouAEIOU]/g;
+
+export function computeHitScore(draft: SongDraft): HitScoreReport {
+  const intro   = pullSectionLines(draft.intro);
+  const verse1  = pullSectionLines(draft.verse1);
+  const hook    = pullSectionLines(draft.hook);
+  const verse2  = pullSectionLines(draft.verse2);
+  const bridge  = pullSectionLines(draft.bridge);
+  const outro   = pullSectionLines(draft.outro);
+  const allBody = [...intro, ...verse1, ...hook, ...verse2, ...bridge, ...outro];
+  const totalText = allBody.join(" ").toLowerCase();
+  const notes: string[] = [];
+
+  // ── Hook strength ────────────────────────────────────────────────────────
+  // Chantability factors: hook exists, length is in pop sweet-spot (4-8 lines),
+  // hook lines are short (<= 10 words), at least one line repeats, last word
+  // ends in an open vowel for vocal extension.
+  let hookStrength = 0;
+  if (hook.length === 0) {
+    notes.push("No chorus/hook lines — major hit-potential penalty.");
+  } else {
+    hookStrength += 25; // baseline for having a hook
+    if (hook.length >= 4 && hook.length <= 8) hookStrength += 20;
+    else notes.push(`Hook is ${hook.length} lines — sweet spot is 4–8 for replay value.`);
+
+    const hookLineLengths = hook.map((l) => l.split(/\s+/).filter(Boolean).length);
+    const avgHookLen = hookLineLengths.reduce((s, n) => s + n, 0) / Math.max(1, hookLineLengths.length);
+    if (avgHookLen > 0 && avgHookLen <= 9) hookStrength += 20;
+    else if (avgHookLen <= 12) hookStrength += 10;
+    else notes.push(`Hook lines average ${avgHookLen.toFixed(1)} words — long hooks lose chantability.`);
+
+    const hookLower = hook.map((l) => l.toLowerCase().trim());
+    const hookSet = new Set(hookLower);
+    const repeatedLines = hookLower.length - hookSet.size;
+    if (repeatedLines >= 1) hookStrength += 20;
+    else notes.push("No repeated lines in the hook — repetition is what makes hooks stick.");
+
+    const lastChar = hook[hook.length - 1].replace(/[^a-zA-Z]/g, "").slice(-1).toLowerCase();
+    if ("aeiou".includes(lastChar)) hookStrength += 15;
+    else notes.push("Hook ends on a closed consonant — open vowel endings are more singable.");
+  }
+
+  // ── Emotional impact ─────────────────────────────────────────────────────
+  // Density of emotional vocabulary across body lines, plus presence of a
+  // keeper line (the song's emotional spine).
+  const wordCount = totalText.split(/\s+/).filter(Boolean).length;
+  const emotionHits = HIT_EMOTION_WORDS.reduce((sum, w) => {
+    const re = new RegExp(`\\b${w}\\b`, "gi");
+    const matches = totalText.match(re);
+    return sum + (matches ? matches.length : 0);
+  }, 0);
+  const emotionDensity = wordCount > 0 ? emotionHits / wordCount : 0;
+  // 1 emotion word per ~20 body words is the sweet spot (~5%).
+  let emotionalImpact = clamp(emotionDensity * 1500); // density 0.05 -> 75
+  const keeperLine = (draft as { keeperLine?: unknown }).keeperLine;
+  if (typeof keeperLine === "string" && keeperLine.trim().length > 0) emotionalImpact += 20;
+  else notes.push("Missing keeperLine — songs without a clear emotional spine score lower.");
+  emotionalImpact = clamp(emotionalImpact);
+
+  // ── Flow quality ─────────────────────────────────────────────────────────
+  // Variance in line length signals a melodic contour; flat = monotone.
+  // Average words per line should be in the 5-12 range for singability.
+  let flowQuality = 50;
+  if (allBody.length === 0) {
+    flowQuality = 0;
+  } else {
+    const lens = allBody.map((l) => l.split(/\s+/).filter(Boolean).length);
+    const avg = lens.reduce((s, n) => s + n, 0) / lens.length;
+    const variance = lens.reduce((s, n) => s + (n - avg) ** 2, 0) / lens.length;
+    const sdev = Math.sqrt(variance);
+    if (avg >= 5 && avg <= 12) flowQuality += 20;
+    else if (avg < 5) notes.push(`Average line is ${avg.toFixed(1)} words — too short, may feel choppy.`);
+    else notes.push(`Average line is ${avg.toFixed(1)} words — too long, melodic shape gets buried.`);
+    if (sdev >= 1.5 && sdev <= 5) flowQuality += 20;
+    else if (sdev < 1.5) notes.push("Line lengths are too uniform — flat contour reads as monotone.");
+    else notes.push("Line lengths vary too wildly — pacing feels inconsistent.");
+
+    const verseHookContrast =
+      verse1.length > 0 && hook.length > 0
+        ? Math.abs(
+            verse1.reduce((s, l) => s + l.length, 0) / verse1.length -
+              hook.reduce((s, l) => s + l.length, 0) / hook.length,
+          )
+        : 0;
+    if (verseHookContrast >= 5) flowQuality += 10;
+    else notes.push("Verse and hook feel too similar in shape — listener won't feel the lift into the chorus.");
+  }
+  flowQuality = clamp(flowQuality);
+
+  // ── Originality ──────────────────────────────────────────────────────────
+  // Type/token ratio across body + cliche penalty.
+  let originality = 50;
+  if (wordCount > 0) {
+    const tokens = totalText.split(/\s+/).filter(Boolean);
+    const unique = new Set(tokens);
+    const ttr = unique.size / tokens.length; // type/token ratio
+    if (ttr >= 0.45) originality += 30;
+    else if (ttr >= 0.35) originality += 15;
+    else notes.push(`Low lexical diversity (${(ttr * 100).toFixed(0)}%) — words are recycling too much.`);
+
+    const clicheHits = HIT_CLICHE_PATTERNS.reduce((sum, re) => sum + (re.test(totalText) ? 1 : 0), 0);
+    if (clicheHits === 0) originality += 20;
+    else {
+      originality -= clicheHits * 15;
+      notes.push(`Detected ${clicheHits} pop-cliche phrase${clicheHits > 1 ? "s" : ""} — penalty applied.`);
+    }
+  } else {
+    originality = 0;
+  }
+  originality = clamp(originality);
+
+  // ── Performance feel ─────────────────────────────────────────────────────
+  // Adlib presence + open-vowel ratio + at least one bridge that breaks pattern.
+  // We must count adlibs from the RAW (unstripped) lines because pullSectionLines
+  // intentionally removes "(adlibs)" so they don't pollute the length/vocab math.
+  let performanceFeel = 40;
+  const rawBody = [
+    ...pullSectionLinesRaw(draft.intro),
+    ...pullSectionLinesRaw(draft.verse1),
+    ...pullSectionLinesRaw(draft.hook),
+    ...pullSectionLinesRaw(draft.verse2),
+    ...pullSectionLinesRaw(draft.bridge),
+    ...pullSectionLinesRaw(draft.outro),
+  ];
+  const adlibCount = rawBody.reduce((sum, l) => sum + (l.match(/\([^)]+\)/g)?.length ?? 0), 0);
+  if (adlibCount >= 2) performanceFeel += 20;
+  else if (adlibCount === 1) performanceFeel += 10;
+  else notes.push("No adlibs detected — songs without performance touches feel un-recorded.");
+
+  const allChars = totalText.replace(/[^a-z]/g, "");
+  if (allChars.length > 0) {
+    const vowels = allChars.match(OPEN_VOWELS)?.length ?? 0;
+    const ratio = vowels / allChars.length;
+    if (ratio >= 0.36) performanceFeel += 20; // healthy open-vowel mix for singability
+    else if (ratio >= 0.30) performanceFeel += 10;
+    else notes.push("Lyric is consonant-heavy — vowel scarcity makes it harder to sing.");
+  }
+
+  if (bridge.length > 0) performanceFeel += 10;
+  else notes.push("No bridge — a strong bridge usually adds replay value.");
+  performanceFeel = clamp(performanceFeel);
+
+  // ── Composite ────────────────────────────────────────────────────────────
+  const overall = clamp(
+    hookStrength * 0.35 +
+      emotionalImpact * 0.20 +
+      flowQuality * 0.15 +
+      originality * 0.15 +
+      performanceFeel * 0.15,
+  );
+
+  return {
+    overall,
+    hookStrength,
+    emotionalImpact,
+    flowQuality,
+    originality,
+    performanceFeel,
+    notes,
   };
 }
 
@@ -2368,6 +2634,9 @@ router.post("/generate-song", async (req, res) => {
     }
 
     // ── Merge lyrics + production details into final draft ────────────────
+    // Recompute the hit score on the FINAL merged lyric (post-flow merge) so
+    // the user-facing number reflects exactly what they see in the workspace.
+    const finalHitScore = computeHitScore(finalLyricsDraft);
     const mergedDraft: SongDraft = {
       ...finalLyricsDraft,
       ...(flowData ?? {}),
@@ -2381,7 +2650,23 @@ router.post("/generate-song", async (req, res) => {
         urgencyLevel: diversityProfile.urgencyLevel,
         artistMindset: diversityProfile.artistMindset,
       },
+      // V7 — surface the hit-potential breakdown so the frontend can render it
+      // without having to re-score on the client. Existing consumers that
+      // ignore this field are unaffected (additive only).
+      hitScore: finalHitScore,
     };
+
+    logger.info(
+      {
+        overall: finalHitScore.overall,
+        hook: finalHitScore.hookStrength,
+        emotion: finalHitScore.emotionalImpact,
+        flow: finalHitScore.flowQuality,
+        originality: finalHitScore.originality,
+        performance: finalHitScore.performanceFeel,
+      },
+      "Hit Score V7 computed",
+    );
 
     res.json({ draft: mergedDraft });
   } catch (err) {
@@ -3565,6 +3850,394 @@ function getMelodyFriendlyBlock(): string[] {
     "Do NOT write like an essay.",
     "Do NOT write like spoken explanation.",
     "Write like music.",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER CREATIVE DIRECTION
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Replaces the previous behavior where the user's "Prompt / Direction" textarea
+// was emitted as a weak `extra notes = ...` line buried inside the INPUT block.
+// That label has near-zero attention weight on a tightly-instructed model and
+// was being routinely ignored — exactly the bug the user reported.
+//
+// Instead we emit a high-priority directive block at the top of the prompt,
+// and a short reinforcement reminder at the very bottom (last-context anchor).
+// The double-anchor is the most reliable way to make a small/mid-sized LLM
+// actually honor user-supplied steering text without us having to fine-tune.
+//
+// Both functions are no-ops when the user did not provide any direction,
+// so prompts stay clean for users who leave the field blank.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function buildUserCreativeDirectionBlock(notes?: string): string[] {
+  const trimmed = notes?.trim();
+  if (!trimmed) return [];
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  ⚡ USER CREATIVE DIRECTION — PRIORITY DIRECTIVE",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    "The user has provided EXPLICIT creative direction for this song.",
+    "This is the PRIMARY creative driver — it overrides any conflicting default.",
+    "",
+    "USER DIRECTION:",
+    `> ${trimmed.split("\n").join("\n> ")}`,
+    "",
+    "YOU MUST APPLY THIS DIRECTION TO:",
+    "  - the thematic content of every section",
+    "  - the imagery, metaphors, and concrete details",
+    "  - the narrative direction and emotional arc",
+    "  - the hook idea and keeperLine",
+    "  - any specific elements, names, or scenes the user requested",
+    "",
+    "RULES:",
+    "  - If the user names a person, place, or feeling, it MUST appear in the lyrics.",
+    "  - If the user describes a scene, the song MUST take place in or evoke that scene.",
+    "  - If the user requests a specific angle, every section must serve that angle.",
+    "  - Do NOT default to generic theme variations — write to THIS direction.",
+    "",
+    "Treat this block as the brief from the artist themselves.",
+    "Failure to honor it is a failed generation.",
+  ];
+}
+
+export function buildUserCreativeDirectionReminder(notes?: string): string[] {
+  const trimmed = notes?.trim();
+  if (!trimmed) return [];
+  // Keep the reminder small but unmistakable — last context wins.
+  return [
+    "",
+    "──────────────────────────────────────────────────",
+    "FINAL REMINDER — USER CREATIVE DIRECTION:",
+    `"${trimmed.replace(/\s+/g, " ").slice(0, 400)}"`,
+    "Honor this in every section before submitting.",
+    "──────────────────────────────────────────────────",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V7 — LAYER 1: MELODY DIRECTION ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Tells the model what melodic SHAPE each section should support so the lyric
+// writer thinks like a topliner, not a poet. Different genres reward different
+// melodic contours (Afrobeats = chantable repetition + vowel extensions;
+// Amapiano = sparse phrasing on top of log-drum gaps; R&B = long held vowels;
+// Hip-Hop = dense rhythmic syllables). We map genre → contour profile, then
+// give per-section guidance: where to soar, where to whisper, where to pause.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MelodyContourProfile {
+  hookContour: string;
+  verseRhythm: string;
+  bridgeShape: string;
+  syllableDensity: string;
+  vowelStrategy: string;
+  signature: string;
+}
+
+function resolveMelodyContour(genre: string, mood: string): MelodyContourProfile {
+  const g = genre.toLowerCase();
+  const m = mood.toLowerCase();
+
+  if (g.includes("amapiano")) {
+    return {
+      hookContour: "low-mid call answered by a soaring repeated phrase — leave breathing space for log-drum hits",
+      verseRhythm: "sparse, conversational, half-time feel; let groove carry between phrases",
+      bridgeShape: "drop tempo perception, then release into the final hook",
+      syllableDensity: "low-to-medium — fewer words per bar than Afrobeats, more pocket",
+      vowelStrategy: "extend last vowel of each phrase to ride the shaker pattern",
+      signature: "Amapiano",
+    };
+  }
+  if (g.includes("afrobeat") || g.includes("afro-fusion") || g.includes("afro fusion")) {
+    return {
+      hookContour: "anthemic, chantable, vowel-rich repetition — fans should be able to sing it the second time it hits",
+      verseRhythm: "syncopated medium density; bounce on the off-beat, breathe on the down-beat",
+      bridgeShape: "lift in melody (raise the keynote a step or two) then fall back into the hook",
+      syllableDensity: "medium — favor short punchy lines that land on the 1 and 3",
+      vowelStrategy: "open vowels (a, o, e) on hook tail words for chantability",
+      signature: "Afrobeats",
+    };
+  }
+  if (g.includes("trap") || g.includes("drill")) {
+    return {
+      hookContour: "rhythmic monotone with one melodic lift — repetition is the hook",
+      verseRhythm: "dense triplet flows; deliberate pocket between bars",
+      bridgeShape: "stripped-down half-bar phrases, then explode back into the hook",
+      syllableDensity: "high — multi-syllable internal rhymes and triplet patterns",
+      vowelStrategy: "consonant-heavy; let percussive consonants (k, t, p) drive rhythm",
+      signature: "Trap/Drill",
+    };
+  }
+  if (g.includes("r&b") || g.includes("rnb") || g.includes("soul")) {
+    return {
+      hookContour: "long-held melodic phrases with melismatic runs — singer's playground",
+      verseRhythm: "smooth and conversational; favor space over filler",
+      bridgeShape: "high emotional climb, often a key change or dynamic swell",
+      syllableDensity: "low-to-medium — singer needs room to embellish",
+      vowelStrategy: "extended open vowels for runs; minimize hard consonants on long notes",
+      signature: "R&B/Soul",
+    };
+  }
+  if (g.includes("hip") || g.includes("rap")) {
+    return {
+      hookContour: "punchy 4-bar hook with one big melodic line and a rhythmic counter",
+      verseRhythm: "dense, internal rhymes, multi-syllable wordplay; drive bar-by-bar",
+      bridgeShape: "tempo shift or beat switch; either strip back or double-time",
+      syllableDensity: "high — bars should feel full but never crowded",
+      vowelStrategy: "rhyme on the last and second-to-last syllable; chain assonance",
+      signature: "Hip-Hop",
+    };
+  }
+  if (g.includes("dancehall") || g.includes("reggae")) {
+    return {
+      hookContour: "chant-style call-and-response with a punchy repeated tag",
+      verseRhythm: "off-beat skank; ride the riddim, don't fight it",
+      bridgeShape: "drop to a dub-style breakdown, then return to full hook",
+      syllableDensity: "medium; favor short emphatic phrases over essays",
+      vowelStrategy: "elongate the final word of each line for skank emphasis",
+      signature: "Dancehall/Reggae",
+    };
+  }
+  if (g.includes("highlife") || g.includes("juju")) {
+    return {
+      hookContour: "melodic call-and-response, often layered with backing harmony",
+      verseRhythm: "flowing, narrative-driven, follows the guitar line",
+      bridgeShape: "instrumental-style melodic hook restated with new lyrics",
+      syllableDensity: "medium-low — singer should converse over the groove",
+      vowelStrategy: "round, sung vowels; let consonants stay soft",
+      signature: "Highlife",
+    };
+  }
+  if (g.includes("gospel") || g.includes("worship")) {
+    return {
+      hookContour: "ascending phrase that climaxes on a held note — congregational lift",
+      verseRhythm: "narrative testimony rhythm; declarative not boastful",
+      bridgeShape: "modulation upward, build into worship climax",
+      syllableDensity: "low-to-medium; clarity beats density",
+      vowelStrategy: "open vowels on the climactic note for vocal projection",
+      signature: "Gospel",
+    };
+  }
+  if (g.includes("pop")) {
+    return {
+      hookContour: "instantly memorable 4-bar hook with vowel-rich payoff line",
+      verseRhythm: "tight, conversational, sets up the hook at all costs",
+      bridgeShape: "harmonic shift then return to a doubled, bigger hook",
+      syllableDensity: "medium — every syllable should earn its place",
+      vowelStrategy: "front-load consonants, end phrases on open vowels",
+      signature: "Pop",
+    };
+  }
+  // Default — neutral but still actionable.
+  return {
+    hookContour: "memorable repeated melodic phrase that anchors the song",
+    verseRhythm: "conversational, musical, leaves room for delivery",
+    bridgeShape: "emotional or harmonic lift before returning to the hook",
+    syllableDensity: "medium — favor singability over density",
+    vowelStrategy: "open vowels on payoff syllables",
+    signature: genre || "Default",
+  };
+}
+
+export function getMelodyDirectionBlock(genre: string, mood: string, performanceFeel: string): string[] {
+  const profile = resolveMelodyContour(genre, mood);
+  const moodLine =
+    /aggressive|gritty|raw|hard/i.test(mood) ? "Push consonants and clipped phrasing — the melody should feel pressurized."
+    : /romantic|seductive|smooth|tender/i.test(mood) ? "Long phrases, soft entries, melismatic tail-ends — melody should feel like a caress."
+    : /uplifting|joyful|celebrat|anthemic/i.test(mood) ? "Soaring tail-notes on the hook, vowel-rich payoff lines — lift the room."
+    : /melancholic|sad|heartbreak|reflective/i.test(mood) ? "Descending melodic lines on emotional pivots, half-step bends, breath in the gaps."
+    : "Match the melodic shape to the emotional arc of each line.";
+
+  const feelLine =
+    /smooth/i.test(performanceFeel) ? "Smooth feel — favor legato phrasing, fewer hard syllabic stops."
+    : /aggressive|hard|raw/i.test(performanceFeel) ? "Aggressive feel — front-load punchy consonants, shorter melodic phrases."
+    : /melodic/i.test(performanceFeel) ? "Melodic feel — extended vowel runs, melismatic ornament lines."
+    : /spoken|talky/i.test(performanceFeel) ? "Spoken/talky feel — rhythm-first phrasing, melody is implied not sung."
+    : "Match phrasing to the chosen performance feel.";
+
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🎼 MELODY DIRECTION ENGINE — V7",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    `Genre signature: ${profile.signature}`,
+    "",
+    "Write each section so it supports a real melodic shape — not just words.",
+    "A topliner / vocalist must be able to sing this without rewriting in the booth.",
+    "",
+    "PER-SECTION MELODIC GUIDANCE:",
+    `  - INTRO:   atmospheric setup — sparse phrasing, sets the emotional key`,
+    `  - VERSE:   ${profile.verseRhythm}`,
+    `  - HOOK:    ${profile.hookContour}`,
+    `  - BRIDGE:  ${profile.bridgeShape}`,
+    `  - OUTRO:   release and resolution — fade emotional weight, leave the listener with the hook`,
+    "",
+    "GLOBAL CONTOUR RULES:",
+    `  - Syllable density target: ${profile.syllableDensity}`,
+    `  - Vowel strategy: ${profile.vowelStrategy}`,
+    `  - Mood shape: ${moodLine}`,
+    `  - Performance feel: ${feelLine}`,
+    "",
+    "MELODIC TESTS BEFORE SUBMITTING:",
+    "  1. Does the hook have at least one open-vowel payoff word a singer can extend?",
+    "  2. Does each verse leave breathing space, or is it wall-to-wall syllables?",
+    "  3. Does the bridge actually shift the melodic energy, not just the words?",
+    "  4. Are line lengths varied enough to imply a melodic contour, not flat prose?",
+    "",
+    "If any answer is no, reshape the line until it sings.",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AFROMUSE LYRICS INTELLIGENCE V7 — LAYER 2: VOICE STYLE SIMULATION
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Derives a vocal PERSONA from mood + performance feel + gender model + genre.
+// The persona drives: word choice, rhythm cadence, attitude, and personality
+// consistency across sections. Without this layer the LLM tends to drift —
+// verse 1 sounds like a different artist than verse 2. With it the lyrics
+// feel like ONE singer, with ONE point of view, the whole way through.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface VoicePersona {
+  name: string;
+  attitude: string;
+  vocabulary: string;
+  cadence: string;
+  bannedTropes: string;
+  pronoun: string;
+}
+
+function resolveVoicePersona(
+  mood: string,
+  performanceFeel: string,
+  genderVoiceModel: string,
+  genre: string,
+): VoicePersona {
+  const m = mood.toLowerCase();
+  const g = genre.toLowerCase();
+  const f = performanceFeel.toLowerCase();
+  const gender = genderVoiceModel.toLowerCase();
+  const pronoun =
+    gender.includes("female") || gender.includes("woman") ? "she/her (female-leading vocal)"
+    : gender.includes("male") || gender.includes("man") ? "he/him (male-leading vocal)"
+    : "neutral — write so either a male or female lead can deliver it";
+
+  // Match the strongest signal first. Order matters — gospel beats romantic
+  // when both are present, etc.
+  if (g.includes("gospel") || g.includes("worship") || /spiritual|prayer|testim/i.test(mood)) {
+    return {
+      name: "Spiritual-Reflective",
+      attitude: "humble authority, testimony-driven, reverent but personal",
+      vocabulary: "scripture-adjacent imagery (light, water, rising, fire), no profanity, no boast vocabulary",
+      cadence: "declarative, breath-supported, builds to climactic confession",
+      bannedTropes: "no street swagger, no romantic seduction language, no flex talk",
+      pronoun,
+    };
+  }
+  if (/aggressive|gritty|raw|hard|trench/i.test(mood) || g.includes("trap") || g.includes("drill")) {
+    return {
+      name: "Street-Raw",
+      attitude: "lived-in, unbothered, hard-earned confidence — not cartoon villain",
+      vocabulary: "concrete street imagery, specific not generic; minimal cliche flexes",
+      cadence: "clipped, percussive, leaves space for the beat to hit",
+      bannedTropes: "no fairy-tale romance, no spiritual softness, no over-poetic metaphor",
+      pronoun,
+    };
+  }
+  if (/romantic|seductive|tender|love|passion/i.test(mood) || g.includes("r&b") || g.includes("rnb")) {
+    return {
+      name: "Smooth-Seductive",
+      attitude: "intimate, magnetic, vulnerable but in control",
+      vocabulary: "sensory detail (touch, scent, gaze), emotional specificity over cliche",
+      cadence: "long phrases, breathy entries, melismatic tail-ends",
+      bannedTropes: "no boast bars, no street threat language, no detached cool",
+      pronoun,
+    };
+  }
+  if (/melancholic|sad|heartbreak|loss|reflective/i.test(mood)) {
+    return {
+      name: "Heartbroken-Vulnerable",
+      attitude: "wounded but honest, no self-pity spiral, processing in real time",
+      vocabulary: "specific personal detail, sense memory, no generic sad-song cliche",
+      cadence: "slower phrasing, descending melodic implication, breath in the gaps",
+      bannedTropes: "no triumphant flex, no party energy, no over-stylized poetry",
+      pronoun,
+    };
+  }
+  if (/uplifting|joyful|celebrat|anthemic|hope/i.test(mood) || g.includes("afrobeat") || g.includes("highlife")) {
+    return {
+      name: "Joyful-Anthemic",
+      attitude: "communal, generous, celebrating without ego",
+      vocabulary: "open imagery (sun, sky, dance, gather), inclusive language, gratitude beats",
+      cadence: "syncopated bounce, chantable hooks, breathing on the down-beat",
+      bannedTropes: "no doom imagery, no isolation language, no detached cool",
+      pronoun,
+    };
+  }
+  if (/confident|bold|empower|win/i.test(mood) || g.includes("hip") || g.includes("rap")) {
+    return {
+      name: "Confident-Bold",
+      attitude: "earned authority, not bragging — telling truth about what they've done",
+      vocabulary: "specific accomplishments and references over generic flex words",
+      cadence: "internal rhymes, multi-syllable wordplay, punchy bar endings",
+      bannedTropes: "no self-pity, no fairy-tale romance, no spiritual surrender",
+      pronoun,
+    };
+  }
+  // Default — coherent neutral persona instead of nothing.
+  return {
+    name: "Authentic-Storyteller",
+    attitude: "honest narrator with a clear point of view, emotionally present",
+    vocabulary: "specific concrete detail; avoid abstract platitudes and stock phrases",
+    cadence: f.includes("smooth") ? "smooth, conversational, breath-supported" : "rhythmic, varied, performance-aware",
+    bannedTropes: "no clichéd genre filler that any artist would say",
+    pronoun,
+  };
+}
+
+export function getVoiceStyleSimulationBlock(
+  mood: string,
+  performanceFeel: string,
+  genderVoiceModel: string,
+  genre: string,
+): string[] {
+  const persona = resolveVoicePersona(mood, performanceFeel, genderVoiceModel, genre);
+  return [
+    "",
+    "╔══════════════════════════════════════════════╗",
+    "  🎙️ VOICE STYLE SIMULATION — V7",
+    "╚══════════════════════════════════════════════╝",
+    "",
+    `VOCAL PERSONA: ${persona.name}`,
+    "",
+    "Write the entire song as ONE consistent vocalist. Every section must feel",
+    "like the same human is singing — same point of view, same vocabulary world,",
+    "same emotional posture. No section should feel like a different artist.",
+    "",
+    "PERSONA CONTRACT:",
+    `  - Attitude:    ${persona.attitude}`,
+    `  - Vocabulary:  ${persona.vocabulary}`,
+    `  - Cadence:     ${persona.cadence}`,
+    `  - Pronoun:     ${persona.pronoun}`,
+    `  - Banned:      ${persona.bannedTropes}`,
+    "",
+    "CONSISTENCY RULES:",
+    "  - The narrator's worldview and stakes must be the same in verse 1, verse 2, and bridge.",
+    "  - Pronoun and gender perspective must be stable across the whole song.",
+    "  - The vocabulary world must not switch genres mid-song (no street swagger in a worship verse, no scripture imagery in a flex verse, etc.).",
+    "  - Emotional posture can DEEPEN section to section — it must not RESET.",
+    "",
+    "Before submitting, re-read each section and ask:",
+    "  \"Does this sound like the same person who sang the previous section?\"",
+    "If not, rewrite until the voice locks in.",
   ];
 }
 

@@ -48,6 +48,19 @@ export interface SongDraft {
     deliveryStyle?: string;
     emotionalTone?: string;
   };
+  // V7 Lyrics Intelligence — Hit Scoring System
+  // Deterministic, heuristic 0-100 score with five sub-dimensions and a
+  // human-readable notes list. Computed server-side in scoreLyricsDraft and
+  // attached to every successful /api/generate-song response.
+  hitScore?: {
+    overall: number;
+    hookStrength: number;
+    emotionalImpact: number;
+    flowQuality: number;
+    originality: number;
+    performanceFeel: number;
+    notes: string[];
+  };
   // V12 Hit Predictor fields (kept for backward compat)
   hitPrediction?: {
     hookStrength?: string;

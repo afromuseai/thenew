@@ -146,6 +146,7 @@ export default function Studio() {
   const [v13Open, setV13Open] = useState(false);
   const [v15Open, setV15Open] = useState(false);
   const [v14Open, setV14Open] = useState(false);
+  const [v7Open, setV7Open] = useState(false);
   const [diversityOpen, setDiversityOpen] = useState(false);
 
   const [draftGenre, setDraftGenre] = useState("");
@@ -268,6 +269,7 @@ export default function Studio() {
       setV13Open(false);
       setV15Open(false);
       setV14Open(false);
+      setV7Open(true); // V7 Hit Score auto-opens so the user sees the new feedback right away
       setStatus("done");
       addEntry({ title: data.draft.title, genre, mood, languageFlavor, topic, draft: data.draft });
       toast({ title: "Draft ready!", description: `"${data.draft.title}" has been written.` });
@@ -1741,6 +1743,149 @@ export default function Studio() {
                         </div>
                       )}
 
+                      {/*
+                        ── V7 LYRICS INTELLIGENCE — HIT SCORING SYSTEM ──
+                        Server-computed deterministic 0-100 hit potential score
+                        with 5 sub-dimensions and a notes list. Lives above the
+                        V13 Viral Hit Generator panel because it's the freshest
+                        signal post-generation. Auto-opens once per generation
+                        (see runGeneration) so users see their score immediately.
+                      */}
+                      {draft.hitScore && (
+                        <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-transparent overflow-hidden">
+                          <button
+                            onClick={() => setV7Open((o) => !o)}
+                            className="w-full flex items-center justify-between px-5 py-3.5 border-b border-amber-500/10 hover:bg-amber-500/5 transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+                                Hit Potential — V7
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                                  draft.hitScore.overall >= 80
+                                    ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                                    : draft.hitScore.overall >= 60
+                                    ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                                    : "bg-red-500/15 border-red-500/30 text-red-400"
+                                }`}
+                              >
+                                {draft.hitScore.overall} / 100
+                              </span>
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 text-amber-400/60 transition-transform duration-200 ${
+                                  v7Open ? "rotate-180" : ""
+                                }`}
+                              />
+                            </div>
+                          </button>
+                          {v7Open && (
+                            <div className="p-5 space-y-4">
+                              {/* Overall score badge */}
+                              <div className="flex items-center gap-4">
+                                <div
+                                  className={`w-16 h-16 rounded-full border-2 flex items-center justify-center ${
+                                    draft.hitScore.overall >= 80
+                                      ? "border-emerald-500/30 bg-emerald-500/10"
+                                      : draft.hitScore.overall >= 60
+                                      ? "border-amber-500/30 bg-amber-500/10"
+                                      : "border-red-500/30 bg-red-500/10"
+                                  }`}
+                                >
+                                  <span
+                                    className={`text-2xl font-black ${
+                                      draft.hitScore.overall >= 80
+                                        ? "text-emerald-400"
+                                        : draft.hitScore.overall >= 60
+                                        ? "text-amber-400"
+                                        : "text-red-400"
+                                    }`}
+                                  >
+                                    {draft.hitScore.overall}
+                                  </span>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-xs font-bold text-white/85 mb-1">
+                                    Composite hit potential
+                                  </p>
+                                  <p className="text-[11px] text-white/50 leading-relaxed">
+                                    Weighted across hook, emotion, flow, originality, and performance feel.
+                                    {draft.hitScore.overall >= 80
+                                      ? " This draft is in radio-ready territory."
+                                      : draft.hitScore.overall >= 60
+                                      ? " Solid foundation — see notes for what to tighten."
+                                      : " Needs work — review the notes and consider regenerating."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Sub-scores grid */}
+                              <div className="grid grid-cols-5 gap-2">
+                                {[
+                                  { label: "Hook", value: draft.hitScore.hookStrength },
+                                  { label: "Emotion", value: draft.hitScore.emotionalImpact },
+                                  { label: "Flow", value: draft.hitScore.flowQuality },
+                                  { label: "Original", value: draft.hitScore.originality },
+                                  { label: "Perform", value: draft.hitScore.performanceFeel },
+                                ].map((m) => (
+                                  <div
+                                    key={m.label}
+                                    className="rounded-xl border border-white/8 bg-white/3 p-2.5 text-center"
+                                  >
+                                    <div
+                                      className={`text-base font-black ${
+                                        m.value >= 80
+                                          ? "text-emerald-400"
+                                          : m.value >= 60
+                                          ? "text-amber-400"
+                                          : "text-red-400"
+                                      }`}
+                                    >
+                                      {m.value}
+                                    </div>
+                                    <div className="text-[9px] font-bold uppercase tracking-widest text-white/40 mt-0.5">
+                                      {m.label}
+                                    </div>
+                                    <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                                      <div
+                                        className={`h-full ${
+                                          m.value >= 80
+                                            ? "bg-emerald-400"
+                                            : m.value >= 60
+                                            ? "bg-amber-400"
+                                            : "bg-red-400"
+                                        }`}
+                                        style={{ width: `${m.value}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Notes list — only render if there are real notes */}
+                              {draft.hitScore.notes.length > 0 && (
+                                <div className="p-3 rounded-xl bg-white/4 border border-white/8">
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/35 mb-2">
+                                    What's affecting the score
+                                  </p>
+                                  <ul className="text-xs text-white/65 space-y-1.5">
+                                    {draft.hitScore.notes.map((n, i) => (
+                                      <li key={i} className="flex gap-2">
+                                        <span className="text-amber-400/60">•</span>
+                                        <span>{n}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* V13 Viral Hit Generator — Song Quality Report */}
                       {(draft.songQualityReport || draft.hookVariants || draft.hitPrediction) && (
                         <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-b from-emerald-500/5 to-transparent overflow-hidden">
@@ -2442,11 +2587,23 @@ export default function Studio() {
               </div>
             )}
 
-            {activeTab === "audio" && (
-              <div className="p-4" id="audio-studio-v2">
-                <AudioStudioV2 ref={audioStudioRef} draft={draft} genre={genre} mood={mood} />
-              </div>
-            )}
+            {/*
+              Keep AudioStudioV2 mounted at all times so its internal state
+              (lyrics textarea, track title, style direction, energy, beat DNA,
+              etc.) survives tab switches. Previously we conditionally rendered
+              with `activeTab === "audio" && (...)`, which unmounted the
+              component the moment the user opened the Lyrics tab for
+              reference and wiped every field they had filled in. Hide via
+              CSS instead so state is preserved exactly until the user clears
+              it themselves.
+            */}
+            <div
+              className="p-4"
+              id="audio-studio-v2"
+              style={{ display: activeTab === "audio" ? undefined : "none" }}
+            >
+              <AudioStudioV2 ref={audioStudioRef} draft={draft} genre={genre} mood={mood} />
+            </div>
 
             {activeTab === "release" && (
               <div className="flex flex-col items-center justify-center py-32 text-center px-8">
