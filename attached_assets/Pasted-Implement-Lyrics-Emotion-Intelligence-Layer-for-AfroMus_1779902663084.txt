@@ -1,0 +1,72 @@
+Implement Lyrics Emotion Intelligence Layer for AfroMuse Lyrics Studio
+
+EXAMPLE JUST FOR CLEAR UNDERSTANDING OF WHAT I MEAN
+
+[Chorus - Choir Layer], [Chorus - Smooth, Addictive], [Chorus - Melodic & Catchy] etc.
+
+[Verse 1 - Rhythmic & Confident], [verse 2 - Smooth & Seductive] etc.
+
+[Pre-Chorus - Build Up] etc.
+
+Intro, bridge, and outro also have their own style.
+
+Every Generated lyrics should have it own specifics based on the storyline and the message
+
+🧠 PURPOSE
+
+Add an intelligence layer that enforces emotional direction control inside lyrics generation, without changing or interfering with existing song structure logic.
+
+This system ONLY influences:
+
+emotional tone per section
+lyrical expression style
+intensity and feeling consistency
+
+It must NOT modify structure, ordering, or section existence.
+
+🎭 CORE FUNCTION
+
+Each lyric section already provided by the existing system must be enhanced with an emotion tag layer.
+
+The system must ensure every section has a clear emotional identity such as:
+
+Confident & Rhythmic
+Smooth & Seductive
+Building Tension
+Emotional Peak
+Reflective / Deep
+Anthemic / Energetic
+Calm Resolution
+⚠️ RULES
+Do NOT modify or enforce song structure
+Do NOT add or remove sections
+Do NOT reorder anything
+Only apply emotional interpretation per section
+Emotion must match the lyrical intent of that section
+Emotion must evolve logically across the song
+No conflicting emotional tone inside a single section
+🧠 EMOTION CONSISTENCY LOGIC
+Each section must feel emotionally distinct
+Emotional progression must support storytelling arc
+Chorus emotion must be the strongest and most memorable
+Verse emotions must support narrative clarity
+Bridge may shift emotion (contrast allowed)
+Outro must resolve emotional energy
+🎯 OUTPUT BEHAVIOR
+
+When processing lyrics, the system must:
+
+Read the section content
+Infer emotional intent
+Assign or refine emotional tag internally
+Ensure emotional consistency with surrounding sections
+Return enhanced emotionally-aware lyrics output
+🚫 FORBIDDEN
+No structural changes
+No section generation
+No reordering of lyrics
+No rewriting full songs
+No removing existing system logic
+🧩 GOAL
+
+Upgrade AfroMuse Lyrics Studio into an emotion-aware songwriting intelligence system that enhances expressive depth without touching structural architecture.

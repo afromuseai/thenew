@@ -75,8 +75,32 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 - New service in `artifacts/music-engine/main.py`, started via the `Music Engine` workflow on port **8000**.
 - `POST /generate` accepts `{prompt, key, bpm, mood, artist_dna, beat_dna}`, validates `key`/`bpm` as required, builds a structured `MusicSpec`, logs it, then returns `{status, audio_url, spec}`.
-- `generate_music_with_engine(spec)` calls the **ACE-Step** Hugging Face Space (`POST https://ace-step-ai-ace-step-v1-5.hf.space/run/predict`) with payload `{"data": [caption, genre, mood, key_scale, bpm, duration]}` (override via `ACE_STEP_URL` / `ACE_STEP_TIMEOUT` env vars). Audio URL is read from `response.json()["data"][0]` (string or dict shapes accepted).
-- On any failure (network error, non-2xx, malformed JSON, missing `data[0]`) the engine logs the full ACE-Step request + response (truncated to 2000 chars) and returns `{"status": "error", "audio_url": "", "spec": {...}, "error": "..."}` — the frontend gets a stable shape it can render.
+- `generate_music_with_engine(spec)` calls the **ACE-Step** Hugging Face Space using the **Gradio queue-based API** wired to the Space's actual generation function (April 2026 migration — replaces the old `/run/predict` call and the placeholder `fn_index=0`):
+  1. `POST {base}/gradio_api/queue/join` with `{data: [...54 inputs...], event_data: null, fn_index: 77, trigger_id: 77, api_name: "generation_wrapper", session_hash}` → returns `{event_id}`.
+  2. `GET {base}/gradio_api/queue/data?session_hash=...` as an SSE stream; `iter_lines` over the event stream until `msg: "process_completed"` (success) or a terminal error event (`queue_full`, `unexpected_error`).
+  3. Audio URL is extracted from `event.output.data[8]` — the Space's "📁 All Generated Files (Download)" output, which is a list of filepath dicts `[{path, url, ...}, ...]`. Falls back to scanning slots `[0..7]` for direct filepath dicts. Relative paths are prefixed with the base URL.
+- **Prompt engine** (`build_afromuse_caption` + `expand_beat_dna` + `_build_tag_prompt` in `main.py`) fuses the inbound free-form prompt with the structured fields into two ACE-Step-ready strings:
+  - `caption` — multi-line **AfroMuse spec block** with sections `STYLE / HARMONY / RHYTHM / INSTRUMENTATION / MOOD / STRUCTURE / PRODUCTION / HARMONIC_TONE`. `STYLE` is hard-coded to `Afrobeat`; `HARMONY.Key`, `RHYTHM.BPM`, `MOOD`, and the artist/beat lines are filled from the spec. `expand_beat_dna(beat_dna)` enriches the user's beat DNA with a canonical afrobeats kit (`log drums, shakers, kick-snare-hat groove, talking drum accents`), and falls back to that kit alone when no beat DNA is provided. Used as the `simple_query_input` content (slot [2]).
+  - `tag_prompt` — comma-separated descriptor tags built from `genre + mood + artist_dna + beat_dna` (deduped, case-insensitive). Used as the custom-mode `Prompt` tag input (slot [4]).
+- `MusicSpec` now carries both the original `prompt` (verbatim user text) and the engineered `caption` + `tag_prompt`, alongside `key_scale`, `bpm`, `duration`, `genre` (always `"afrobeat"`), `mood`, `artist_dna`, `beat_dna`, `vocal_language`.
+- **`generation_wrapper` payload** (`_build_generation_wrapper_payload`) builds the 54-element input array in **`custom` mode by default** so the Space's structured inputs actually drive generation (not just `simple_query_input`). The simple_* slots are still populated as a safety fallback in case the Space ever ignores custom-mode fields:
+  - `[0] selected_model` ← `ACE_STEP_MODEL` (default `acestep-v15-xl-turbo`)
+  - `[1] generation_mode` ← `ACE_STEP_GENERATION_MODE` (default `"custom"`, validated to `{"simple","custom"}`)
+  - `[2] simple_query_input` ← `spec.caption` (rich prompt-engine sentence — fallback)
+  - `[3] simple_vocal_language` ← `spec.vocal_language` (fallback)
+  - `[4] Prompt (custom)` ← `spec.tag_prompt` (descriptor tags)
+  - `[5] Lyrics (custom)` ← `""` (instrumental for now)
+  - `[6] BPM (custom)` ← `int(spec.bpm)`
+  - `[7] Key Signature (custom)` ← `spec.key_scale`
+  - `[8] Time Signature (custom)` ← `""` (component default)
+  - `[9] Vocal Language (custom)` ← `spec.vocal_language`
+  - `[15] Audio Duration (seconds)` ← `spec.duration` (default 12, kept short to avoid the Hugging Face Space's free-tier GPU quota)
+  - `[23] task` ← `"text2music"`
+  - All other 42 inputs use the Space's component defaults (DiT inference steps=8, batch size=2, `mp3` output, LM temp=0.85, etc.)
+- The legacy `[caption, genre, mood, key_scale, bpm, duration]` 6-element array has been removed.
+- `GenerateRequest` accepts two optional fields: `vocal_language` (default `"en"`, normalized against the Space's allow-list) and `duration` (default `12`, range 5–240 s). Existing `prompt`/`key`/`bpm`/`mood`/`artist_dna`/`beat_dna` fields are unchanged.
+- Configuration env vars: `ACE_STEP_BASE_URL` (default `https://ace-step-ace-step-v1-5.hf.space`), `ACE_STEP_FN_INDEX` (default `77`), `ACE_STEP_API_NAME` (default `generation_wrapper`), `ACE_STEP_MODEL` (default `acestep-v15-xl-turbo`), `ACE_STEP_GENERATION_MODE` (default `custom`, alternative `simple`), `ACE_STEP_TIMEOUT` (default `240` s, total deadline for the SSE stream), `ACE_STEP_CONNECT_TIMEOUT` (default `30` s). The legacy `ACE_STEP_URL` env var is still honored — any trailing `/run/predict`, `/api/predict`, or `/gradio_api/queue/join` suffix is stripped automatically.
+- On any failure (network error, non-2xx on `/queue/join` or `/queue/data`, malformed SSE line, terminal error event, timeout, missing audio URL) the engine logs the full request + response context (truncated to 2000 chars) and returns `{"status": "error", "audio_url": "", "spec": {...}, "error": "..."}` — the frontend gets a stable shape it can render.
 - The frontend Vite dev server proxies `/engine-api/*` → `http://localhost:8000/*` (see `artifacts/afromuse-ai/vite.config.ts`).
 - Frontend integration: the **Audio Studio tab on `/studio`** drives the engine via the engine selector (see next section). No standalone Generate / Engine page exists.
 - Backend logs both `Incoming Request:` and `Final Spec:` via `print(...)` (stdout) and `logger.info(...)`.
@@ -102,6 +126,20 @@ The engine selector lives **inside the Audio Studio tab on `/studio`** (`AudioSt
 - The lyrics generation system prompt has been replaced with the AFROMUSE_ENGINE, a clean structured prompt with a fixed song structure (INTRO → CHORUS → VERSE1 → CHORUS → VERSE2 → CHORUS → BRIDGE → OUTRO) and simple rules: catchy chorus, storytelling verses, natural phrasing, short rhythmic lines.
 - User inputs map to: theme (topic), mood, language (languageFlavor), style (genre).
 - The JSON output format is preserved for frontend compatibility: title, intro, hook, verse1, verse2, bridge, outro, diversityReport, and analytics fields.
+
+## Lyrics Emotion Intelligence Layer
+
+- New module `artifacts/afromuse-ai/src/lib/lyricsEmotion.ts` adds an **emotion-aware tagging layer** on top of any generated `SongDraft`. It is strictly additive — it does **not** add, remove, reorder, or rewrite sections.
+- Emotion catalog (7 tags): `Confident & Rhythmic`, `Smooth & Seductive`, `Building Tension`, `Emotional Peak`, `Reflective / Deep`, `Anthemic / Energetic`, `Calm Resolution`.
+- `inferLyricsEmotions(draft, mood)` returns one tag per section role (`intro`, `hook`, `verse1`, `verse2`, `bridge`, `outro`) using:
+  1. **Keyword scoring** — each section's lines are scanned against a per-tag lexicon (e.g. `kiss/touch/skin → Smooth & Seductive`, `rise/fire/win → Anthemic / Energetic`, `tears/break/pain → Emotional Peak`, `?` count → Building Tension, etc.).
+  2. **Role + mood fallback** — when scoring is inconclusive, the chorus uses a `mood → tag` bias table (`Romantic → Smooth & Seductive`, `Heartbreak → Emotional Peak`, `Uplifting → Anthemic / Energetic`, …) and other roles fall back to a sensible per-role default.
+  3. **Consistency rules** — outro is always `Calm Resolution`; no two adjacent sections in playback order share the same tag (collisions are downgraded to a related sibling via a small `FAMILIES` graph); the bridge is forced to contrast the chorus.
+- Wired into three render sites without changing structure or order:
+  - `formatDraftForClipboard` (in `songGenerator.ts`) — exported / clipboard text now reads `[ CHORUS - Smooth & Seductive ]`, `[ VERSE 1 - Confident & Rhythmic ]`, etc.
+  - `LYRICS_SECTIONS` in `pages/Studio.tsx` — each section header still shows the original colored tag (Chorus / Verse / Bridge / Intro), with a **second small badge** appended showing the inferred emotion.
+  - Drawer in `pages/Projects.tsx` — section labels in the saved-project drawer are decorated with `— <emotion>`.
+- The chorus emotion is computed once and reused on every chorus repeat, so all three chorus instances share the same anchor emotion.
 
 ## Stack
 

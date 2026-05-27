@@ -19,6 +19,7 @@ import {
   formatDraftForClipboard,
   type SongDraft,
 } from "@/lib/songGenerator";
+import { inferLyricsEmotions, type EmotionTag } from "@/lib/lyricsEmotion";
 import { useAuth } from "@/context/AuthContext";
 import { usePlan, PLAN_LIMITS, type Plan } from "@/context/PlanContext";
 import { useProjectLibrary, extractResumeState } from "@/context/ProjectLibraryContext";
@@ -491,18 +492,29 @@ export default function Studio() {
 
   const LYRICS_SECTIONS = draft ? (() => {
     const bridgeLabel = draft.diversityReport?.dnaMode === "CHAOS MODE" ? "Break" : "Bridge";
-    const sections: { id: string; label: string; lines: string[] }[] = [];
-    const push = (id: string, label: string, lines?: string[]) => {
-      if (lines?.length) sections.push({ id, label, lines });
+    const emotions = inferLyricsEmotions(
+      {
+        intro: draft.intro,
+        hook: draft.hook,
+        verse1: draft.verse1,
+        verse2: draft.verse2,
+        bridge: draft.bridge,
+        outro: draft.outro,
+      },
+      mood,
+    );
+    const sections: { id: string; label: string; emotion?: EmotionTag; lines: string[] }[] = [];
+    const push = (id: string, label: string, emotion: EmotionTag | undefined, lines?: string[]) => {
+      if (lines?.length) sections.push({ id, label, emotion, lines });
     };
-    push("intro", "Intro", draft.intro);
-    push("hook-1", "Chorus", draft.hook);
-    push("verse1", "Verse 1", draft.verse1);
-    push("hook-2", "Chorus", draft.hook);
-    push("verse2", "Verse 2", draft.verse2);
-    push("hook-3", "Chorus", draft.hook);
-    push("bridge", bridgeLabel, draft.bridge);
-    push("outro", "Outro", draft.outro);
+    push("intro", "Intro", emotions.intro, draft.intro);
+    push("hook-1", "Chorus", emotions.hook, draft.hook);
+    push("verse1", "Verse 1", emotions.verse1, draft.verse1);
+    push("hook-2", "Chorus", emotions.hook, draft.hook);
+    push("verse2", "Verse 2", emotions.verse2, draft.verse2);
+    push("hook-3", "Chorus", emotions.hook, draft.hook);
+    push("bridge", bridgeLabel, emotions.bridge, draft.bridge);
+    push("outro", "Outro", emotions.outro, draft.outro);
     return sections;
   })() : [];
 
@@ -2006,7 +2018,7 @@ export default function Studio() {
                         <div className="p-5 space-y-6">
                           {LYRICS_SECTIONS.map((section) => (
                             <div key={section.id}>
-                              <div className="flex items-center gap-2 mb-2.5">
+                              <div className="flex items-center gap-2 mb-2.5 flex-wrap">
                                 <span className={`text-[10px] font-black tracking-widest uppercase px-2.5 py-0.5 rounded-md border ${
                                   section.label === "Chorus"
                                     ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
@@ -2020,6 +2032,14 @@ export default function Studio() {
                                 }`}>
                                   {section.label}
                                 </span>
+                                {section.emotion && (
+                                  <span
+                                    title={`Emotional intent: ${section.emotion}`}
+                                    className="text-[9px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-md border bg-white/[0.04] border-white/10 text-white/55"
+                                  >
+                                    {section.emotion}
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-1 pl-1">
                                 {section.lines.map((line, i) => (

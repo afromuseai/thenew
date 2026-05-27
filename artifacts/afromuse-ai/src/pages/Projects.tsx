@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { formatDraftForClipboard } from "@/lib/songGenerator";
+import { inferLyricsEmotions } from "@/lib/lyricsEmotion";
 import { type SavedSession, formatRelativeTime } from "@/lib/projectLibrary";
 import { useProjectLibrary } from "@/context/ProjectLibraryContext";
 
@@ -462,15 +463,27 @@ function ProjectDrawer({
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {draft ? (
+          {draft ? (() => {
+            const emotions = inferLyricsEmotions(
+              {
+                intro: draft.intro,
+                hook: draft.hook,
+                verse1: draft.verse1,
+                verse2: draft.verse2,
+                bridge: draft.bridge,
+                outro: draft.outro,
+              },
+              mood,
+            );
+            return (
             <div className="p-6 space-y-8">
-              <DrawerSection label="⚡ Hook / Chorus" isHook lines={draft.hook} />
-              <DrawerSection label="Verse 1" lines={draft.verse1} />
-              <DrawerSection label="⚡ Hook / Chorus" isHook lines={draft.hook} repeat />
-              <DrawerSection label="Verse 2" lines={draft.verse2} />
+              <DrawerSection label={`⚡ Hook / Chorus${emotions.hook ? ` — ${emotions.hook}` : ""}`} isHook lines={draft.hook} />
+              <DrawerSection label={`Verse 1${emotions.verse1 ? ` — ${emotions.verse1}` : ""}`} lines={draft.verse1} />
+              <DrawerSection label={`⚡ Hook / Chorus${emotions.hook ? ` — ${emotions.hook}` : ""}`} isHook lines={draft.hook} repeat />
+              <DrawerSection label={`Verse 2${emotions.verse2 ? ` — ${emotions.verse2}` : ""}`} lines={draft.verse2} />
 
               <div>
-                <SectionLabel label="Bridge" className="bg-violet-500/12 text-violet-400 border-violet-500/20" />
+                <SectionLabel label={`Bridge${emotions.bridge ? ` — ${emotions.bridge}` : ""}`} className="bg-violet-500/12 text-violet-400 border-violet-500/20" />
                 <div className="rounded-xl bg-violet-500/5 border border-violet-500/10 p-5 mt-3">
                   <p className="text-sm text-white/70 leading-8 italic text-center">
                     {draft.bridge.map((line, i) => (
@@ -480,7 +493,7 @@ function ProjectDrawer({
                 </div>
               </div>
 
-              <DrawerSection label="⚡ Hook / Chorus" isHook lines={draft.hook} repeat />
+              <DrawerSection label={`⚡ Hook / Chorus${emotions.hook ? ` — ${emotions.hook}` : ""}`} isHook lines={draft.hook} repeat />
 
               <div className="border-t border-white/6 pt-6">
                 <div className="flex items-center gap-2 mb-4">
@@ -494,7 +507,8 @@ function ProjectDrawer({
                 </div>
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             <div className="flex flex-col items-center justify-center h-full py-20 text-center px-6">
               <Music className="w-10 h-10 text-muted-foreground/30 mb-4" />
               <p className="text-muted-foreground text-sm">No lyrics generated for this session yet.</p>

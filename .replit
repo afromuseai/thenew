@@ -55,13 +55,13 @@ outputType = "console"
 name = "Music Engine"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python artifacts/music-engine/main.py"
-waitForPort = 8000
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uv run python artifacts/music-engine/main.py"
+waitForPort = 8000
 
 [[ports]]
 localPort = 5000
