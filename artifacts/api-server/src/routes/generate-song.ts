@@ -2908,19 +2908,28 @@ const QWEN_LYRICS_MODEL       = { id: "qwen/qwen3.5-122b-a10b",                 
 const QWEN_LYRICS_RETRY_MODEL = { id: "qwen/qwen3.5-122b-a10b",                  name: "Qwen3.5-122B",     temperature: 0.72 };
 const MAVERICK_FLOW_MODEL     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.78 };
 const MAVERICK_FLOW_RETRY     = { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama-4-Maverick", temperature: 0.62 };
-// AFROMUSE 4-MODEL ORCHESTRATION (April 30, 2026 spec)
+// AFROMUSE 4-MODEL ORCHESTRATION (April 30, 2026 spec — post role swap)
 //   Stage 1 STRUCTURE  → Maverick     (above)
-//   Stage 2 EMOTION    → LLaMA 3.2 3B (small/fast/cool — strict authority on emotion direction)
+//   Stage 2 EMOTION    → gpt-oss-120b (heavyweight emotion-tag generation —
+//                                       higher creative variety, strict authority)
 //   Stage 3 LYRICS     → Qwen 122B    (above)
-//   Stage 4 POLISH     → Solar 10.7B  (cool — flow polish only, never restructures)
-// Emotion engine temperature was 0.45 historically, which made LLaMA 3.2
-// converge on the same handful of "safe" tags every generation
-// (e.g. "Quiet Pain Float", "Reflective Pause"). Bumped to 0.85 for
-// real per-generation variety. Combined with response_format=json_object
-// + a per-request creative spice token, the fallback table now triggers
-// far less often.
-const LLAMA_EMOTION_MODEL     = { id: "meta/llama-3.2-3b-instruct",              name: "Llama-3.2-3B",     temperature: 0.85 };
-const SOLAR_POLISH_MODEL      = { id: "upstage/solar-10.7b-instruct",            name: "Solar-10.7B",      temperature: 0.55 };
+//   Stage 4 REFINE     → LLaMA 3.2 3B (small/fast/cool — STRICT PRESERVATION;
+//                                       grammar / malformed-line fixes only,
+//                                       gated by needsMicroRefinement; skipped
+//                                       when not needed)
+// Emotion engine temperature was 0.45 historically (when this stage ran on
+// LLaMA 3.2 3B), which made the small model converge on the same handful of
+// "safe" tags every generation (e.g. "Quiet Pain Float", "Reflective Pause").
+// Bumped to 0.85 for real per-generation variety. The role-swap to
+// gpt-oss-120b keeps the high-temperature setting because the goal is still
+// emotional variety, not deterministic output.
+const EMOTION_TAG_MODEL        = { id: "openai/gpt-oss-120b",                     name: "GPT-OSS-120B",     temperature: 0.85 };
+// Stage 4 history: Solar-10.7B (free-rewrite "polish") → gpt-oss-120b (strict
+// micro-refinement) → LLaMA 3.2 3B (current). The 3B model is intentionally
+// small and cool: this stage MUST do nothing creative, only fix mechanical
+// issues (broken grammar, duplicated adjacent words, malformed sentences).
+// A small/cool model is a better fit for that constraint than a 120B.
+const MICRO_REFINEMENT_MODEL   = { id: "meta/llama-3.2-3b-instruct",              name: "Llama-3.2-3B",     temperature: 0.2  };
 // Stage 6 LOCALIZATION (Custom Language only) → LLaMA 3.1 70B Instruct
 // Rewrites finished lyrics into the user's chosen language as a NATIVE
 // songwriter would — preserving structure, emotion, rhythm, and chant
@@ -2941,20 +2950,30 @@ const QWEN_DIRECTOR_MODEL      = { id: "qwen/qwen3.5-397b-a17b",                
 function draftToLyricsText(draft: SongDraft): string {
   const sections: string[] = [];
   const order = Array.isArray(draft.diversityReport) ? [] : (draft.diversityReport as { arrangementOrder?: SectionKey[] } | undefined)?.arrangementOrder;
-  const sectionMap: Record<SectionKey, { label: string; lines: unknown[] | undefined }> = {
-    intro: { label: "Intro", lines: draft.intro },
-    hook: { label: "Chorus", lines: draft.hook },
-    verse1: { label: "Verse 1", lines: draft.verse1 },
-    verse2: { label: "Verse 2", lines: draft.verse2 },
-    bridge: { label: "Bridge / Break", lines: draft.bridge },
-    outro: { label: "Outro", lines: draft.outro },
+  const sectionMap: Record<SectionKey, { defaultLabel: string; lines: unknown[] | undefined }> = {
+    intro: { defaultLabel: "Intro", lines: draft.intro },
+    hook: { defaultLabel: "Chorus", lines: draft.hook },
+    verse1: { defaultLabel: "Verse 1", lines: draft.verse1 },
+    verse2: { defaultLabel: "Verse 2", lines: draft.verse2 },
+    bridge: { defaultLabel: "Bridge / Break", lines: draft.bridge },
+    outro: { defaultLabel: "Outro", lines: draft.outro },
   };
+  // V13 — section titles now use the dynamic emotion tag from Stage 2
+  // (draft.emotionTags) or, if missing, the merged blueprint emotion_map.
+  // Static labels like "Anthemic / Energetic" are NEVER hard-coded here.
+  // Falls back to the plain default label only when both sources are absent.
+  const emotionTags =
+    (draft as { emotionTags?: Partial<Record<SectionKey, string>> }).emotionTags
+    ?? (draft as { creativeBlueprint?: { emotion_map?: Partial<Record<SectionKey, string>> } }).creativeBlueprint?.emotion_map
+    ?? {};
   const keys = order?.length ? order : ["intro", "verse1", "hook", "verse2", "bridge", "outro"] as SectionKey[];
   for (const key of keys) {
     const section = sectionMap[key as SectionKey];
     if (!section) continue;
     if (Array.isArray(section.lines) && section.lines.length > 0) {
-      sections.push(`[${section.label}]\n${(section.lines as string[]).join("\n")}`);
+      const tag = (emotionTags[key as SectionKey] ?? "").trim();
+      const label = tag ? `${section.defaultLabel} — ${tag}` : section.defaultLabel;
+      sections.push(`[${label}]\n${(section.lines as string[]).join("\n")}`);
     }
   }
   return sections.join("\n\n");
@@ -2983,7 +3002,7 @@ function draftToLyricsText(draft: SongDraft): string {
 // CreativeBlueprint now mirrors the AFROMUSE 4-model orchestration:
 //   - flow_map / hook_style / adlib_style / artist_behavior are produced by
 //     Stage 1 (Maverick) — STRUCTURE BRAIN.
-//   - emotion_map is produced by Stage 2 (LLaMA 3.2 3B) — EMOTION TAG ENGINE.
+//   - emotion_map is produced by Stage 2 (gpt-oss-120b) — EMOTION TAG ENGINE.
 //   The two are merged into a single CreativeBlueprint before Stage 3 (Qwen)
 //   so the lyrics writer sees one unified contract — and downstream consumers
 //   (frontend, production blueprint step) keep working unchanged.
@@ -2996,7 +3015,7 @@ interface CreativeBlueprint {
 }
 
 // Stage 2 output — JSON emotion map, one tag per section, produced by the
-// LLaMA 3.2 3B emotion engine. Strict authority on emotion direction.
+// gpt-oss-120b emotion engine. Strict authority on emotion direction.
 type EmotionTagMap = Partial<Record<SectionKey, string>>;
 
 // ─── PDLCS — Prompt Distribution + Light Compression System ───────────────────
@@ -3013,9 +3032,9 @@ const BLUEPRINT_SYSTEM_PROMPT = `AFROMUSE STRUCTURE BLUEPRINT — STAGE 1 (4-MOD
 
 You are the STRUCTURAL BRAIN of a 4-stage AfroMuse songwriting pipeline:
   Stage 1 (you)        → STRUCTURE (this output)
-  Stage 2 LLaMA 3.2 3B → EMOTION TAGS (separate model, strict authority)
+  Stage 2 gpt-oss-120b → EMOTION TAGS (separate model, strict authority)
   Stage 3 Qwen 122B    → LYRICS
-  Stage 4 Solar 10.7B  → POLISH
+  Stage 4 LLaMA 3.2 3B → MICRO-REFINEMENT (grammar/malformed-line fixes only — gated)
 
 Your ONLY output is a STRUCTURE blueprint JSON. You do NOT write lyrics.
 You do NOT decide emotion tags — the emotion engine owns that. Use the
@@ -3152,10 +3171,11 @@ function buildBlueprintPrompt(params: {
   ].join("\n");
 }
 
-// ─── STAGE 2 — EMOTION TAG ENGINE (LLaMA 3.2 3B) ─────────────────────────────
-// Tiny, fast, low-temperature model whose ONLY job is to assign one emotion
-// tag per section. Strict authority: Stage 3 (Qwen) MUST honor these tags.
-// Rules: no flat repetition, must evolve, must reflect the artist's style.
+// ─── STAGE 2 — EMOTION TAG ENGINE (gpt-oss-120b) ─────────────────────────────
+// Heavyweight high-temperature model whose ONLY job is to assign one
+// emotion tag per section. Strict authority: Stage 3 (Qwen) MUST honor
+// these tags. Rules: no flat repetition, must evolve, must reflect the
+// artist's style. (Was LLaMA 3.2 3B prior to the role swap with Stage 4.)
 
 const EMOTION_TAG_SYSTEM_PROMPT = `AFROMUSE EMOTION DRIFT ENGINE — STAGE 2 (V10 ARC-BASED)
 
@@ -3459,33 +3479,62 @@ function buildEmotionTagPrompt(params: {
   ].join("\n");
 }
 
-// ─── STAGE 4 — SOLAR POLISH ENGINE (Solar 10.7B) ─────────────────────────────
-// Final pass. Improves flow / rhythm / weak lines. NEVER changes meaning,
-// structure, section order, line counts, emotion tags, or the keeperLine.
-// Returns the SAME JSON shape so we can drop it back into the pipeline.
+// ─── STAGE 4 — MICRO-REFINEMENT ENGINE (LLaMA 3.2 3B, STRICT PRESERVATION) ───
+// Replaces the previous Solar "polish" pass. Solar was rewriting lyrics
+// freely — flattening dialect, translating street language into standard
+// English, and weakening emotional intensity. This breaks every downstream
+// intelligence layer (style, emotion, chant behavior).
+//
+// LLaMA 3.2 3B runs here in STRICT PRESERVATION MODE: it may ONLY fix
+// broken grammar, remove accidentally duplicated words, and patch
+// malformed sentences. It is NOT a rewriter, NOT a translator, and NOT
+// allowed to "improve" creatively. A small/cool model is well-suited to
+// this constraint. The route also gates the call on
+// `needsMicroRefinement(draft)` — if no grammar / malformed-line issues
+// are detected, Stage 4 is skipped entirely so the raw Qwen output ships.
+//
+// Returns the SAME compact lyric-array shape; keeperLine, title, and
+// lyricsIntelligenceCore are preserved on our side after refinement.
 
-// Solar 10.7B has a HARD 4096-token context window (input + output combined).
-// To fit, we send ONLY the lyric arrays (no intelligenceCore, no backups) and
-// ask for ONLY the lyric arrays back. The original draft's keeperLine, title,
-// and lyricsIntelligenceCore are preserved on our side after polish.
+const SOLAR_POLISH_SYSTEM_PROMPT = `AFROMUSE MICRO-REFINEMENT ENGINE — STAGE 4 (STRICT PRESERVATION MODE)
 
-const SOLAR_POLISH_SYSTEM_PROMPT = `AFROMUSE QUALITY POLISH — STAGE 4
+ROLE: MICRO-REFINEMENT ENGINE (PRESERVE STYLE AT ALL COSTS)
 
-You are the FINAL POLISH layer for an AfroMuse song. Your only job is to
-make every line flow better, rhyme tighter, and chant harder where needed.
+You are NOT a rewriter.
+You are NOT a translator.
+You are NOT allowed to improve creatively.
 
-HARD CONSTRAINTS — VIOLATING ANY = REJECT:
-- DO NOT change the song's meaning, story, or theme.
-- DO NOT change the number of lines in any section.
-- DO NOT change the emotion of any section.
-- DO NOT add meta inside lyrics: no [Verse 1], no (Note:), no asterisks.
-- DO NOT add new sections.
+Your job is to LIGHTLY refine lyrics while preserving 100% of:
+- dialect
+- slang
+- rhythm
+- emotional tone
+- structure
+- line count
+- repetition patterns
 
-WHAT YOU MAY DO:
-- Tighten word choice for rhythm and singability.
-- Strengthen weak rhymes / patch awkward phrasing.
-- Sharpen chant cadence on chant sections.
-- Keep dialect native to the language flavor.
+STRICT RULES:
+1. DO NOT change dialect or slang.
+2. DO NOT translate into standard English.
+3. DO NOT change flow or rhythm.
+4. DO NOT rewrite lines unless absolutely necessary.
+5. DO NOT reduce repetition.
+6. DO NOT change emotional intensity.
+
+YOU MAY ONLY:
+- fix broken grammar
+- remove accidentally duplicated words ("the the" → "the")
+- fix malformed sentences (stray punctuation, dangling fragments)
+
+HARD CONSTRAINTS:
+- Line count per section MUST remain identical.
+- Section structure MUST NOT change.
+- Slang words and dialect particles (oya, gba, mi, dem, naija, fi, weh,
+  yuh, dey, sabi, abi, no be, etc.) MUST be preserved verbatim — never
+  swapped for standard-English equivalents.
+
+SELF-CHECK:
+If slang, tone, or rhythm changed → REVERT the line to the original.
 
 OUTPUT — JSON ONLY, lyric arrays in the same shape & length:
 {
@@ -3501,8 +3550,9 @@ function buildSolarPolishPrompt(params: {
   draft: SongDraft;
   blueprint: CreativeBlueprint;
   languageFlavor: string;
+  detectedIssues: string[];
 }): string {
-  const { draft, blueprint, languageFlavor } = params;
+  const { draft, blueprint, languageFlavor, detectedIssues } = params;
   // Compact section dump — only the line arrays.
   const sections = {
     intro:  Array.isArray(draft.intro)  ? draft.intro  : [],
@@ -3512,7 +3562,7 @@ function buildSolarPolishPrompt(params: {
     bridge: Array.isArray(draft.bridge) ? draft.bridge : [],
     outro:  Array.isArray(draft.outro)  ? draft.outro  : [],
   };
-  // Compact blueprint — flow + emotion only (Solar doesn't need adlib palettes).
+  // Compact blueprint — flow + emotion only.
   const tightBlueprint = {
     flow:    blueprint.flow_map,
     emotion: blueprint.emotion_map,
@@ -3520,13 +3570,16 @@ function buildSolarPolishPrompt(params: {
   return [
     `LANGUAGE: ${languageFlavor} | KEEPER (do not change): ${draft.keeperLine ?? ""}`,
     "",
-    "BLUEPRINT (locked):",
+    "BLUEPRINT (locked — for context only, do NOT re-derive):",
     JSON.stringify(tightBlueprint),
     "",
-    "DRAFT TO POLISH (return SAME shape, improved):",
+    "DETECTED ISSUES — fix ONLY these. Leave every other line untouched:",
+    ...detectedIssues.map((i) => `  - ${i}`),
+    "",
+    "DRAFT (return SAME shape, micro-refined ONLY where listed above):",
     JSON.stringify(sections),
     "",
-    "TASK: polish. JSON only. Do not change line counts.",
+    "TASK: micro-refinement. JSON only. Identical line counts. Preserve slang, dialect, repetition, and emotional intensity verbatim.",
   ].join("\n");
 }
 
@@ -3854,6 +3907,60 @@ Allowed types: call & response (crowd), chant bursts, prayer interjections,
 street hype markers. Forbidden: repeating the SAME adlib style every section
 (no "Oya / Eh / Amen" sprinkled everywhere). Pull from blueprint adlib_style.
 
+═══ DIALECT AUTHENTICITY RULE (V13 — LAW) ═══
+If genre or artist implies a dialect (Dancehall, Afrobeats street, Drill,
+Amapiano, Naija Pidgin, etc.):
+  1. DO NOT translate from English.
+  2. DO NOT swap words one-to-one (English bone with dialect skin = FAIL).
+  3. SWITCH to the native grammar system — sentence structure, slang
+     usage, rhythm of speech, and contraction patterns ALL change.
+If a line reads as "English with swapped words" → REWRITE it internally
+in the native dialect grammar BEFORE returning.
+
+═══ DANCEHALL MODE (NATIVE PATOIS GRAMMAR) ═══
+When the genre is Dancehall (or the language flavor is Patois / Jamaican):
+  - Use REAL Jamaican Patois grammar — not "de / fi de / we a" sprinkled
+    onto an English thought.
+  - Avoid spam patterns: "de de de", "fi de", "we a we a", "yuh nuh yuh nuh".
+  - Use natural Patois phrasing such as:
+      mi nah · dem cyaan · weh dem know bout · inna di place · nuh easy ·
+      man a rise · mi seh · who fi tell mi · suh dem a try · weh yuh deh
+  - Focus on RHYTHM + PUNCH, not literal English grammar correctness.
+  - Short, declarative, riddim-bound lines. Conviction over explanation.
+
+═══ HOOK QUALITY RULE (V13 — REPETITION MUST EVOLVE) ═══
+If the hook uses repetition (which most chant hooks should):
+  - The repeated phrase MUST evolve line-to-line (extension, twist,
+    intensifier, pronoun shift, or response).
+  - It MUST include either VARIATION (a small change each repeat) OR
+    a (crowd) call-and-response line.
+  - It MUST build energy — line N+1 cannot have less weight than line N.
+REJECT flat repetition loops such as:
+  ✗ "We a scream / We a scream / We a scream / We a scream"
+  ✗ "I rise up / I rise up / I rise up / I rise up"
+A flat-loop hook = REWRITE the hook internally before output.
+
+═══ GENRE DOMINANCE RULE (V13 — GENRE OVERRIDES DEFAULTS) ═══
+Genre OVERRIDES the default writing style. Do NOT mix unintentionally:
+  Dancehall  → rough phrasing · rhythmic punch · slang-heavy · shorter lines
+  Afrobeats  → melodic · smoother flow · emotional layering · sing-friendly
+  Drill      → clipped · aggressive · slang-dense · stop-start cadence
+  Amapiano   → laid-back groove · spaced phrasing · log-drum-friendly cadence
+  Gospel     → testimonial · communal · spiritual cadence · hymn-rooted
+  Highlife   → conversational warmth · proverbial wisdom · easy lift
+If the genre is Dancehall but the lines read like Afrobeats melody →
+REWRITE in Dancehall grammar before returning. Genre wins, every time.
+
+═══ EMOTION → WRITING ENFORCEMENT (V13) ═══
+Each section's emotion tag MUST visibly change at least FOUR of these:
+  - line length          (short vs long)
+  - repetition level     (low / medium / high)
+  - energy               (rest / build / peak / release)
+  - vocal tone           (chant / smooth / broken / percussive)
+  - adlib palette        (matched to the section's CORE EMOTION)
+If two sections sound similar → REWRITE one. Adjacent sections MUST
+read AND feel different — prove it with line shape, not just labels.
+
 ═══ FILLER CONTROL (NO LAZY CRUTCHES) ═══
 Do NOT overuse "eh", "mmm", "oh Lord", "yeah", "woah", "ahh".
 Use ONLY when the section's emotion explicitly requires it.
@@ -4076,6 +4183,112 @@ function lightValidate(
   return { pass: issues.length === 0, issues };
 }
 
+// ─── STAGE 4 GATE — needsMicroRefinement ─────────────────────────────────────
+//
+// Stage 4 (LLaMA 3.2 3B) only runs when there is something MECHANICAL to fix.
+// If the Qwen draft is already grammatically clean, we SKIP Stage 4 entirely
+// so that the raw Qwen authenticity (dialect, slang, rhythm, repetition)
+// ships untouched. The gate looks ONLY at line-level mechanical issues —
+// emotion / structure / role checks live in Stage 5 / 5.5 / 5.7.
+//
+// Triggers:
+//   • duplicated adjacent words      ("the the", "we we", "I I")
+//   • doubled punctuation runs       (",,", "..", ";;", "?!?!", "!!!!")
+//   • dangling fragments             (line ends with " ," or " ;" / starts
+//                                      with stray punctuation)
+//   • whitespace-only or 1-char lines (malformed line)
+//   • unbalanced parens / quotes     ("(yeah" with no closing ")")
+//
+// Returns { needsRefinement, issues[] } — the issue list is forwarded to
+// the model so it knows EXACTLY which lines to touch and leaves all others
+// alone.
+function needsMicroRefinement(draft: SongDraft): { needsRefinement: boolean; issues: string[] } {
+  const issues: string[] = [];
+  const sectionKeys: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+
+  const dupWordRe = /\b(\p{L}+)\s+\1\b/iu;
+  const doubledPunctRe = /([,.;:!?])\1{1,}/;
+  const danglingEndRe = /[\s]+[,;:]$/;
+  const danglingStartRe = /^[,;:!?.]/;
+
+  for (const k of sectionKeys) {
+    const arr = draft[k];
+    if (!Array.isArray(arr)) continue;
+    for (let i = 0; i < arr.length; i += 1) {
+      const raw = arr[i];
+      if (typeof raw !== "string") {
+        issues.push(`${k}[${i + 1}]: non-string line`);
+        continue;
+      }
+      const line = raw.trim();
+      if (line.length === 0) {
+        issues.push(`${k}[${i + 1}]: empty line`);
+        continue;
+      }
+      if (line.length === 1) {
+        issues.push(`${k}[${i + 1}]: single-character line "${line}"`);
+        continue;
+      }
+      const dup = line.match(dupWordRe);
+      if (dup) issues.push(`${k}[${i + 1}]: duplicated word "${dup[1]} ${dup[1]}"`);
+      if (doubledPunctRe.test(line)) issues.push(`${k}[${i + 1}]: doubled punctuation`);
+      if (danglingEndRe.test(line)) issues.push(`${k}[${i + 1}]: dangling trailing punctuation`);
+      if (danglingStartRe.test(line)) issues.push(`${k}[${i + 1}]: stray leading punctuation`);
+      // Unbalanced parens / quotes
+      const opens = (line.match(/\(/g) ?? []).length;
+      const closes = (line.match(/\)/g) ?? []).length;
+      if (opens !== closes) issues.push(`${k}[${i + 1}]: unbalanced parentheses`);
+      const dquotes = (line.match(/"/g) ?? []).length;
+      if (dquotes % 2 === 1) issues.push(`${k}[${i + 1}]: unbalanced quote`);
+    }
+  }
+
+  return { needsRefinement: issues.length > 0, issues };
+}
+
+// ─── STAGE 4 ACCEPTANCE GATE — slang / dialect preservation ─────────────────
+//
+// After LLaMA 3.2 3B returns refined sections, we count occurrences of
+// Pan-African + Caribbean dialect markers across the WHOLE draft and
+// require the refined version to retain ≥ original count. If the model
+// stripped slang/dialect (e.g. translated "mi nah dem" → "I don't, them"),
+// we REJECT the refined draft and keep the original Qwen output verbatim.
+const STAGE4_DIALECT_LEXICON: ReadonlyArray<string> = [
+  // Naija Pidgin
+  "oya","gba","gbas","gbos","wahala","abeg","sabi","abi","na","no be",
+  "dey","wetin","wey","sef","make","biko","jare","fit","go dey",
+  // Yoruba inflections common in Afrobeats
+  "omo","baba","jor","mehn","baddo","faaji","skrrr",
+  // Patois / Jamaican
+  "mi","dem","weh","yuh","nuh","fi","inna","seh","cyaan","nah",
+  "jah","selah","irie","bredren","massive","yard","gyal",
+  // Twi / Ghanaian
+  "charley","massa","chale","kraa","paa",
+  // Adlib / chant markers
+  "skrr","brrr","ehh","ahh","woi","oyaa",
+];
+
+function countDialectMarkers(draft: SongDraft): number {
+  let total = 0;
+  const sectionKeys: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+  for (const k of sectionKeys) {
+    const arr = draft[k];
+    if (!Array.isArray(arr)) continue;
+    for (const line of arr) {
+      if (typeof line !== "string") continue;
+      const lower = line.toLowerCase();
+      for (const marker of STAGE4_DIALECT_LEXICON) {
+        // Word-boundary-ish match — accept the marker as a standalone token
+        // OR followed by punctuation. Keeps "oya!" and "mi seh" both valid.
+        const re = new RegExp(`(^|[^\\p{L}])${marker.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}([^\\p{L}]|$)`, "iu");
+        const matches = lower.match(new RegExp(re, "giu"));
+        if (matches) total += matches.length;
+      }
+    }
+  }
+  return total;
+}
+
 function buildLightFixPrompt(draft: SongDraft, issues: string[], blueprint: CreativeBlueprint): string {
   return [
     "STAGE 3 LIGHT FIX — minor edits only. Do NOT regenerate the whole song.",
@@ -4097,6 +4310,344 @@ function buildLightFixPrompt(draft: SongDraft, issues: string[], blueprint: Crea
     "",
     "Return the SAME JSON shape with ONLY the targeted lines edited. JSON only.",
   ].join("\n");
+}
+
+// ─── V13 RUNTIME AUDIT PASS ─────────────────────────────────────────────────
+//
+// Runs AFTER Stage 5 / 5.5 so the draft we audit is the one that would
+// actually ship. Encodes the V12 master core's HARD FAIL CONDITIONS as
+// programmatic checks — the contract is now enforced both in-prompt AND
+// post-generation:
+//
+//   ✗ HF-1  Verse line count outside the section's allowed window
+//   ✗ HF-2  Adjacent sections share the same CORE EMOTION word (V10 plateau)
+//   ✗ HF-3  Hook identity drift — flat repetition loop with NO evolution
+//           AND no (crowd) call-and-response line
+//   ✗ HF-4  Wrong-emotion adlibs — adlib palette belongs to a different
+//           CORE EMOTION family than the section's tag
+//   ✗ HF-5  Missed section role — verse1/verse2 too similar (verse2 doesn't
+//           ESCALATE), or hook missing the keeperLine (doesn't STATE)
+//
+// Each failure is attributed to ONE section so the per-section regenerator
+// can fix only the broken sections — never the whole song.
+
+type V13FailReason =
+  | "lineCount"
+  | "adjacentCorePlateau"
+  | "hookIdentityDrift"
+  | "wrongEmotionAdlib"
+  | "missedSectionRole";
+
+interface V13SectionFailure {
+  section: SectionKey;
+  reasons: V13FailReason[];
+  details: string[];
+}
+
+// Strip leading energy adjectives so we compare actual CORE EMOTION words.
+// Mirrors the local helper in callEmotionEngine.
+function v13CoreWord(tag: string): string {
+  if (!tag) return "";
+  const ENERGY_ADJ = new Set([
+    "rising","soft","explosive","controlled","quiet","loud","slow","fast",
+    "gentle","heavy","light","sharp","dull","bright","dark","cold","warm",
+    "hollow","layered","cracked","smooth","raw","calm","wild","tender",
+    "burning","glowing","steady","trembling","rapid","slowed","muted",
+  ]);
+  const tokens = tag
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  for (const t of tokens) if (!ENERGY_ADJ.has(t)) return t;
+  return tokens[0] ?? "";
+}
+
+// CORE EMOTION → expected adlib family. An adlib that lives in a DIFFERENT
+// family than the section's CORE is flagged as wrong-emotion. Ambiguous /
+// neutral adlibs (yeah, oh, mmm) are tolerated — they fit anywhere.
+const V13_ADLIB_FAMILIES: Record<string, string[]> = {
+  pain:     ["ahh","why","hmm","no","lord","cry","tears"],
+  prayer:   ["amen","jah","lord","selah","praise","hallelujah","baba"],
+  spiritual:["amen","jah","lord","selah","praise","hallelujah","baba"],
+  street:   ["oya","gba","run","dey","gbas","gbos","skrr","shaku"],
+  hype:     ["yeah","up","let","go","bounce","run","gbas","gbos","oya"],
+  victory:  ["yeah","up","let","go","run","up","champ"],
+  joy:      ["woo","bounce","yeahh","let","go","yay"],
+  struggle: ["lie","talk","truth","tried","real","still"],
+  longing:  ["oh","still","wait","one","more"],
+  love:     ["oh","baby","mmm","ooh","still"],
+  anger:    ["yo","ay","nah","stop","damn"],
+  pressure: ["go","push","up","run","now"],
+  release:  ["ahh","oh","ease","letgo","free"],
+  reflective:["mmm","still","oh","quiet","why"],
+};
+const V13_NEUTRAL_ADLIBS = new Set(["yeah","oh","mmm","ooh","ah","eh","uh","hmm","ahh","mm"]);
+
+function v13ExpectedAdlibFamily(coreWord: string): string[] {
+  const c = (coreWord ?? "").toLowerCase();
+  // Map common CORE words to a family bucket.
+  const map: Record<string, keyof typeof V13_ADLIB_FAMILIES> = {
+    pain: "pain", hurt: "pain", broken: "pain", ache: "pain", sad: "pain",
+    prayer: "prayer", faith: "prayer", spiritual: "spiritual", worship: "spiritual", hymn: "spiritual",
+    street: "street", trench: "street", hustle: "street", grind: "street",
+    hype: "hype", celebration: "hype", party: "hype", anthem: "hype",
+    victory: "victory", win: "victory", triumph: "victory", champion: "victory",
+    joy: "joy", happy: "joy", bright: "joy",
+    struggle: "struggle", survival: "struggle", fight: "struggle",
+    longing: "longing", miss: "longing", wait: "longing", far: "longing",
+    love: "love", heart: "love", romance: "love",
+    anger: "anger", rage: "anger", protest: "anger",
+    pressure: "pressure", build: "pressure", tension: "pressure",
+    release: "release", free: "release",
+    reflective: "reflective", quiet: "reflective", reflection: "reflective", calm: "reflective",
+  };
+  const bucket = map[c];
+  return bucket ? V13_ADLIB_FAMILIES[bucket]! : [];
+}
+
+// Pull adlib-like words from a section. Captures both parenthetical bursts
+// like "(oya!)" / "(crowd: amen!)" and standalone short interjection lines.
+function v13ExtractAdlibs(lines: unknown[]): string[] {
+  const found: string[] = [];
+  for (const line of lines) {
+    if (typeof line !== "string") continue;
+    const matches = line.match(/\(([^)]+)\)/g) ?? [];
+    for (const m of matches) {
+      const inner = m.slice(1, -1).replace(/^crowd\s*:\s*/i, "").trim();
+      // Take only short bursts (1–3 words) — longer parens are response phrases.
+      const wc = inner.split(/\s+/).filter(Boolean).length;
+      if (wc >= 1 && wc <= 3) {
+        for (const w of inner.toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/)) {
+          if (w) found.push(w);
+        }
+      }
+    }
+  }
+  return found;
+}
+
+// Hook identity drift — flat-loop detection.
+// FAIL when ALL hook lines collapse to the SAME first-3-words anchor AND
+// there is NO (crowd) line AND there is NO line-to-line variation.
+function v13HookIsFlatLoop(hookLines: string[]): boolean {
+  if (hookLines.length < 3) return false;
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\s]/gu, "").trim().split(/\s+/).slice(0, 3).join(" ");
+  const anchors = hookLines.map(norm).filter(Boolean);
+  if (anchors.length < 3) return false;
+  const hasCrowd = hookLines.some((l) => /\(.*crowd|crowd\s*:/i.test(l) || /^\s*\(/.test(l));
+  if (hasCrowd) return false;
+  const allSame = anchors.every((a) => a === anchors[0]);
+  if (!allSame) return false;
+  // Allow flat repetition only when the FULL line evolves (same opening,
+  // different ending). If the whole line is identical too → flat loop.
+  const fullNorm = hookLines.map((l) => l.toLowerCase().replace(/[^\p{L}\s]/gu, " ").trim().replace(/\s+/g, " "));
+  const distinctFull = new Set(fullNorm).size;
+  return distinctFull <= 1;
+}
+
+// Verse2 must ESCALATE from verse1. We approximate "escalation" by
+// requiring < 60% line-set overlap. Pure repeats / near-copies fail.
+function v13VerseSimilarity(v1: string[], v2: string[]): number {
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const a = new Set(v1.map(norm).filter(Boolean));
+  const b = new Set(v2.map(norm).filter(Boolean));
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const x of a) if (b.has(x)) shared += 1;
+  return shared / Math.min(a.size, b.size);
+}
+
+function runtimeAuditV13(
+  draft: SongDraft,
+  diversityProfile: DiversityProfile,
+  emotionTags: EmotionTagMap | null | undefined,
+): { pass: boolean; failures: V13SectionFailure[] } {
+  const failures = new Map<SectionKey, V13SectionFailure>();
+  const note = (k: SectionKey, reason: V13FailReason, detail: string): void => {
+    let f = failures.get(k);
+    if (!f) {
+      f = { section: k, reasons: [], details: [] };
+      failures.set(k, f);
+    }
+    if (!f.reasons.includes(reason)) f.reasons.push(reason);
+    f.details.push(detail);
+  };
+
+  const sectionList: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+  const tags: Partial<Record<SectionKey, string>> =
+    emotionTags
+    ?? (draft as { creativeBlueprint?: { emotion_map?: Partial<Record<SectionKey, string>> } }).creativeBlueprint?.emotion_map
+    ?? {};
+
+  // HF-1 — line count
+  for (const k of sectionList) {
+    const allowed = diversityProfile.sectionLineTargets[k];
+    if (!Array.isArray(allowed) || allowed.length === 0) continue;
+    const arr = draft[k];
+    if (!Array.isArray(arr)) continue;
+    const lines = arr.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+    if (!allowed.includes(lines.length)) {
+      note(k, "lineCount", `current=${lines.length}, allowed=[${allowed.join(",")}]`);
+    }
+  }
+
+  // HF-2 — adjacent CORE plateau (attribute to the LATER section so the
+  // regen targets the offender, not the anchor).
+  for (let i = 1; i < sectionList.length; i++) {
+    const prev = sectionList[i - 1]!;
+    const curr = sectionList[i]!;
+    const prevCore = v13CoreWord(tags[prev] ?? "");
+    const currCore = v13CoreWord(tags[curr] ?? "");
+    if (prevCore && prevCore === currCore) {
+      note(curr, "adjacentCorePlateau", `shares CORE "${prevCore}" with previous section ${prev}`);
+    }
+  }
+
+  // HF-3 — hook identity drift (flat repetition loop with no crowd line)
+  const hookLines = Array.isArray(draft.hook)
+    ? (draft.hook as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+    : [];
+  if (hookLines.length >= 3 && v13HookIsFlatLoop(hookLines)) {
+    note("hook", "hookIdentityDrift", "flat repetition loop with no (crowd) line and no line variation");
+  }
+
+  // HF-4 — wrong-emotion adlibs
+  for (const k of sectionList) {
+    const arr = draft[k];
+    if (!Array.isArray(arr) || arr.length === 0) continue;
+    const tag = tags[k];
+    if (!tag) continue;
+    const expected = v13ExpectedAdlibFamily(v13CoreWord(tag));
+    if (expected.length === 0) continue;
+    const adlibs = v13ExtractAdlibs(arr);
+    if (adlibs.length === 0) continue;
+    // An adlib counts as wrong-emotion only if it belongs to a DIFFERENT
+    // family entirely (i.e. lives in another bucket but not this one and
+    // is not in the neutral set).
+    const wrong: string[] = [];
+    for (const a of adlibs) {
+      if (V13_NEUTRAL_ADLIBS.has(a)) continue;
+      if (expected.includes(a)) continue;
+      // Look it up in any family. If it lives in some family that isn't
+      // this one → wrong emotion. Words never seen in any family are
+      // tolerated (might be cultural slang we don't know yet).
+      let foundIn: string | null = null;
+      for (const [fam, words] of Object.entries(V13_ADLIB_FAMILIES)) {
+        if (words.includes(a)) { foundIn = fam; break; }
+      }
+      if (foundIn) wrong.push(`${a} (${foundIn})`);
+    }
+    if (wrong.length >= 2) {
+      note(k, "wrongEmotionAdlib", `expected family for "${tag}" is [${expected.join(",")}], got off-family adlibs: ${wrong.join(", ")}`);
+    }
+  }
+
+  // HF-5 — missed section role
+  // Hook MUST contain the keeperLine (STATEMENT role)
+  const keeper = typeof draft.keeperLine === "string" ? draft.keeperLine.trim() : "";
+  if (keeper && hookLines.length > 0) {
+    const hookText = hookLines.join(" ").toLowerCase();
+    if (!hookText.includes(keeper.toLowerCase())) {
+      note("hook", "missedSectionRole", "hook does not contain keeperLine (STATEMENT role missed)");
+    }
+  }
+  // Verse2 MUST escalate from verse1 (line-set overlap < 60%)
+  const v1 = Array.isArray(draft.verse1)
+    ? (draft.verse1 as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+    : [];
+  const v2 = Array.isArray(draft.verse2)
+    ? (draft.verse2 as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+    : [];
+  if (v1.length > 0 && v2.length > 0) {
+    const sim = v13VerseSimilarity(v1, v2);
+    if (sim >= 0.6) {
+      note("verse2", "missedSectionRole", `verse2 ≈ verse1 (overlap=${sim.toFixed(2)} ≥ 0.60) — ESCALATION role missed`);
+    }
+  }
+
+  return { pass: failures.size === 0, failures: [...failures.values()] };
+}
+
+function buildV13RegenPrompt(
+  draft: SongDraft,
+  failures: V13SectionFailure[],
+  blueprint: CreativeBlueprint,
+  diversityProfile: DiversityProfile,
+  emotionTags: EmotionTagMap | null | undefined,
+  selectedGenre: string,
+  effectiveFlavor: string,
+): string {
+  const tags: Partial<Record<SectionKey, string>> =
+    emotionTags
+    ?? (draft as { creativeBlueprint?: { emotion_map?: Partial<Record<SectionKey, string>> } }).creativeBlueprint?.emotion_map
+    ?? {};
+  const keeper = typeof draft.keeperLine === "string" ? draft.keeperLine.trim() : "";
+  const hookContext = Array.isArray(draft.hook)
+    ? (draft.hook as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0).join(" / ")
+    : "";
+
+  const fixSpec = failures.map((f) => {
+    const allowed = diversityProfile.sectionLineTargets[f.section] ?? [];
+    const currentLines = Array.isArray(draft[f.section])
+      ? (draft[f.section] as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+      : [];
+    // Pick a target line count that lives in the allowed set and is closest
+    // to the current count (so we trim/expand as little as possible).
+    const target = allowed.length > 0
+      ? allowed.reduce((best, c) => Math.abs(c - currentLines.length) < Math.abs(best - currentLines.length) ? c : best, allowed[0]!)
+      : currentLines.length;
+    return [
+      `SECTION: ${f.section}`,
+      `EMOTION TAG (LAW — do not change): ${tags[f.section] ?? "(unspecified)"}`,
+      `TARGET_LINES: ${target}   ← MUST EXACTLY MATCH`,
+      `ALLOWED_COUNTS: [${allowed.join(", ")}]`,
+      `FAIL REASONS: ${f.reasons.join(", ")}`,
+      `DETAILS:`,
+      ...f.details.map((d) => `  • ${d}`),
+      `CURRENT LINES:`,
+      ...currentLines.map((l, i) => `  ${i + 1}. ${l}`),
+    ].join("\n");
+  }).join("\n\n");
+
+  return [
+    "V13 RUNTIME AUDIT — PER-SECTION REGENERATION.",
+    "Regenerate ONLY the listed sections. Do NOT touch unlisted sections.",
+    `GENRE (LAW — overrides defaults): ${selectedGenre}`,
+    `LANGUAGE FLAVOR: ${effectiveFlavor}`,
+    "",
+    "FIX RULES:",
+    "  1. lineCount          → emit EXACTLY TARGET_LINES non-empty lines",
+    "  2. adjacentCorePlateau → REWRITE so the CORE EMOTION word genuinely",
+    "                            differs from the previous section",
+    "  3. hookIdentityDrift  → REWRITE the hook so repetition EVOLVES line-",
+    "                            to-line OR add a (crowd) call-and-response",
+    "                            line; build energy across lines",
+    "  4. wrongEmotionAdlib  → REPLACE off-family adlibs with adlibs that",
+    "                            match the section's CORE EMOTION",
+    "  5. missedSectionRole  → for hook: include the keeperLine VERBATIM;",
+    "                            for verse2: ESCALATE from verse1 (new",
+    "                            angle, higher stakes, deeper pressure)",
+    "",
+    `KEEPER LINE (must appear VERBATIM in hook if hook is regenerated): "${keeper}"`,
+    hookContext ? `HOOK CONTEXT (tonal reference only — do NOT modify unless hook is in the list above): "${hookContext}"` : "",
+    "",
+    "BLUEPRINT (still applies — do not re-derive):",
+    JSON.stringify({
+      hook_style:  blueprint.hook_style,
+      adlib_style: blueprint.adlib_style,
+      flow_map:    blueprint.flow_map,
+      artist_behavior: blueprint.artist_behavior,
+    }),
+    "",
+    "SECTIONS TO REGENERATE:",
+    fixSpec,
+    "",
+    "Return STRICT JSON containing ONLY the regenerated sections, each as an",
+    "array of strings with EXACTLY the target line count. No markdown, no",
+    "fences, no commentary.",
+    'Shape: { "intro"?: string[], "verse1"?: string[], "hook"?: string[], "verse2"?: string[], "bridge"?: string[], "outro"?: string[] }',
+  ].filter(Boolean).join("\n");
 }
 
 // ─── Route ───────────────────────────────────────────────────────────────────
@@ -4389,13 +4940,14 @@ router.post("/generate-song", async (req, res) => {
     const structureBlueprint = await callBlueprintModel();
     logger.info({ elapsedMs: Date.now() - stage1Start, ok: !!structureBlueprint }, "MSGP Stage 1 complete");
 
-    // ─── STAGE 2 — EMOTION TAG ENGINE (LLaMA 3.2 3B) ────────────────────────
-    // Strict authority on emotion direction. Tiny + cool model.
-    // Falls back to a deterministic emotion map derived from mood/genre
-    // if the model is unavailable (so generation never hard-blocks here).
+    // ─── STAGE 2 — EMOTION TAG ENGINE (gpt-oss-120b) ────────────────────────
+    // Strict authority on emotion direction. Heavyweight + high-temperature
+    // model — variety over determinism. Falls back to a deterministic
+    // emotion map derived from mood/genre if the model is unavailable
+    // (so generation never hard-blocks here).
     // V10 — pick a song-wide EMOTION ARC ARCHETYPE up front. The same arc
-    // is reused for both the prompt to LLaMA and the programmatic
-    // anti-plateau / drift checks below.
+    // is reused for both the prompt to the emotion engine and the
+    // programmatic anti-plateau / drift checks below.
     const arcArchetype = selectArcArchetype({
       topic,
       genre: selectedGenre,
@@ -4421,12 +4973,12 @@ router.post("/generate-song", async (req, res) => {
           arcArchetype,
         });
         const response = await ai.chat.completions.create({
-          model: LLAMA_EMOTION_MODEL.id,
+          model: EMOTION_TAG_MODEL.id,
           messages: [
             { role: "system", content: EMOTION_TAG_SYSTEM_PROMPT },
             { role: "user", content: userPrompt },
           ],
-          temperature: LLAMA_EMOTION_MODEL.temperature,
+          temperature: EMOTION_TAG_MODEL.temperature,
           top_p: 0.95,
           max_tokens: 500,
           // Force valid JSON at the API level so we don't fall back to the
@@ -4444,7 +4996,7 @@ router.post("/generate-song", async (req, res) => {
           if (typeof v === "string" && v.trim()) out[k] = v.trim();
         }
         if (!Object.keys(out).length) return null;
-        // Programmatic dedup safety net — LLaMA 3.2 3B sometimes repeats tags
+        // Programmatic dedup safety net — the emotion engine sometimes repeats tags
         // verbatim despite the rule. We append a section-flavored suffix to any
         // duplicate so the downstream lyrics writer sees evolving emotion.
         const SUFFIX_BY_SECTION: Record<SectionKey, string> = {
@@ -4467,7 +5019,7 @@ router.post("/generate-song", async (req, res) => {
           seen.add((out[k] ?? "").toLowerCase());
         }
 
-        // FIX 3 — banned-tag enforcer. Even with the prompt rule, LLaMA 3.2
+        // FIX 3 — banned-tag enforcer. Even with the prompt rule, the emotion engine
         // sometimes still emits "Anthemic" / "High Energy" / "Smooth & Melodic"
         // as a lazy fallback. We catch those verbatim and rewrite them with a
         // section-flavored, storyline-rooted replacement so downstream Qwen
@@ -4576,7 +5128,7 @@ router.post("/generate-song", async (req, res) => {
 
         return out;
       } catch (err) {
-        logger.warn({ model: LLAMA_EMOTION_MODEL.name, err }, "MSGP Stage 2 (emotion engine) failed");
+        logger.warn({ model: EMOTION_TAG_MODEL.name, err }, "MSGP Stage 2 (emotion engine) failed");
         return null;
       }
     };
@@ -4620,7 +5172,7 @@ router.post("/generate-song", async (req, res) => {
     let emotionTags: EmotionTagMap | null = null;
     if (structureBlueprint) {
       const stage2Start = Date.now();
-      logger.info({ model: LLAMA_EMOTION_MODEL.name }, "MSGP Stage 2: starting LLaMA 3.2 emotion engine");
+      logger.info({ model: EMOTION_TAG_MODEL.name }, "MSGP Stage 2: starting emotion engine");
       emotionTags = await callEmotionEngine(structureBlueprint);
       if (!emotionTags) {
         emotionTags = fallbackEmotionMap();
@@ -4875,74 +5427,104 @@ router.post("/generate-song", async (req, res) => {
       return;
     }
 
-    // ─── STAGE 4 — SOLAR POLISH (Solar 10.7B) ───────────────────────────────
-    // Final flow polish. Solar has a HARD 4096-token context window, so we
-    // send only the lyric arrays + tight blueprint and ask for only the
-    // lyric arrays back. Acceptance gate is STRICT: keep polished only if
-    // every section has the EXACT same line count AND the hit score does
-    // not drop by more than 2 points. Title / keeperLine / intelligenceCore
-    // are preserved on our side regardless of what Solar returns.
+    // ─── STAGE 4 — MICRO-REFINEMENT (LLaMA 3.2 3B, STRICT PRESERVATION) ─────
+    // Replaces the previous Solar "polish" pass. LLaMA 3.2 3B is now used
+    // ONLY to fix mechanical issues (broken grammar, duplicated adjacent
+    // words, malformed sentences) — never to rewrite, translate, or
+    // "improve" lyrics. The whole stage is GATED: if `needsMicroRefinement`
+    // finds no mechanical issues, we SKIP the model call entirely and ship
+    // the raw Qwen output. Acceptance is STRICT: identical line counts,
+    // dialect/slang count NOT reduced, and hit score not regressed.
     if (blueprint) {
       const stage4Start = Date.now();
-      logger.info({ model: SOLAR_POLISH_MODEL.name }, "MSGP Stage 4: starting Solar polish");
-      try {
-        const polishUserPrompt = buildSolarPolishPrompt({
-          draft: finalLyricsDraft,
-          blueprint,
-          languageFlavor: effectiveFlavor,
-        });
-        const response = await ai.chat.completions.create({
-          model: SOLAR_POLISH_MODEL.id,
-          messages: [
-            { role: "system", content: SOLAR_POLISH_SYSTEM_PROMPT },
-            { role: "user", content: polishUserPrompt },
-          ],
-          temperature: SOLAR_POLISH_MODEL.temperature,
-          top_p: 0.9,
-          // Solar context = 4096. Input ~1100 tokens; reserve ~2200 for output.
-          max_tokens: 2200,
-        }, { signal: AbortSignal.timeout(60_000) });
-        const raw = response.choices[0]?.message?.content ?? "";
-        // Solar returns ONLY the section arrays (compact shape).
-        const polishedSections = parseJson(raw) as Partial<Record<SectionKey, string[]>> | null;
-
-        const sectionKeys: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
-        const sectionsMatch = (orig: SongDraft, polish: Partial<Record<SectionKey, string[]>>): boolean =>
-          sectionKeys.every((k) => {
-            const a = orig[k];
-            const b = polish[k];
-            return Array.isArray(a) && Array.isArray(b) && a.length === b.length && b.every((line) => typeof line === "string" && line.trim());
+      const refinementGate = needsMicroRefinement(finalLyricsDraft);
+      if (!refinementGate.needsRefinement) {
+        logger.info(
+          { model: MICRO_REFINEMENT_MODEL.name, elapsedMs: Date.now() - stage4Start },
+          "MSGP Stage 4 skipped — no mechanical issues detected (raw Qwen output preserved)",
+        );
+      } else {
+        logger.info(
+          { model: MICRO_REFINEMENT_MODEL.name, issueCount: refinementGate.issues.length, issues: refinementGate.issues.slice(0, 8) },
+          "MSGP Stage 4: starting micro-refinement",
+        );
+        try {
+          const polishUserPrompt = buildSolarPolishPrompt({
+            draft: finalLyricsDraft,
+            blueprint,
+            languageFlavor: effectiveFlavor,
+            detectedIssues: refinementGate.issues,
           });
+          const response = await ai.chat.completions.create({
+            model: MICRO_REFINEMENT_MODEL.id,
+            messages: [
+              { role: "system", content: SOLAR_POLISH_SYSTEM_PROMPT },
+              { role: "user", content: polishUserPrompt },
+            ],
+            temperature: MICRO_REFINEMENT_MODEL.temperature,
+            top_p: 0.9,
+            // LLaMA 3.2 3B has a generous 128k context window — plenty of
+            // room for the strict JSON schema back without truncation;
+            // cap output ~2400.
+            max_tokens: 2400,
+            response_format: { type: "json_object" },
+          }, { signal: AbortSignal.timeout(60_000) });
+          const raw = response.choices[0]?.message?.content ?? "";
+          const refinedSections = parseJson(raw) as Partial<Record<SectionKey, string[]>> | null;
 
-        if (polishedSections && sectionsMatch(finalLyricsDraft, polishedSections)) {
-          // Build the candidate by overlaying ONLY the polished section arrays
-          // onto the original draft — keeperLine / title / intelligenceCore stay.
-          const candidate: SongDraft = {
-            ...finalLyricsDraft,
-            intro:  polishedSections.intro!,
-            verse1: polishedSections.verse1!,
-            hook:   polishedSections.hook!,
-            verse2: polishedSections.verse2!,
-            bridge: polishedSections.bridge!,
-            outro:  polishedSections.outro!,
-          };
-          const beforeScore = computeHitScore(finalLyricsDraft).overall;
-          const afterScore  = computeHitScore(candidate).overall;
-          if (afterScore >= beforeScore - 2) {
-            logger.info({ beforeScore, afterScore }, "MSGP Stage 4 polish accepted");
-            finalLyricsDraft = candidate;
+          const sectionKeys: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+          const sectionsMatch = (orig: SongDraft, polish: Partial<Record<SectionKey, string[]>>): boolean =>
+            sectionKeys.every((k) => {
+              const a = orig[k];
+              const b = polish[k];
+              return Array.isArray(a) && Array.isArray(b) && a.length === b.length && b.every((line) => typeof line === "string" && line.trim());
+            });
+
+          if (refinedSections && sectionsMatch(finalLyricsDraft, refinedSections)) {
+            // Overlay ONLY the refined section arrays onto the original draft.
+            // keeperLine / title / intelligenceCore stay intact.
+            const candidate: SongDraft = {
+              ...finalLyricsDraft,
+              intro:  refinedSections.intro!,
+              verse1: refinedSections.verse1!,
+              hook:   refinedSections.hook!,
+              verse2: refinedSections.verse2!,
+              bridge: refinedSections.bridge!,
+              outro:  refinedSections.outro!,
+            };
+            // Strict acceptance gate — three independent checks:
+            //   1. Hit score did not regress meaningfully (≥ before − 2)
+            //   2. Dialect/slang marker count did not drop
+            //   3. Hook keeperLine still appears (already enforced by structure)
+            const beforeScore = computeHitScore(finalLyricsDraft).overall;
+            const afterScore  = computeHitScore(candidate).overall;
+            const beforeDialect = countDialectMarkers(finalLyricsDraft);
+            const afterDialect  = countDialectMarkers(candidate);
+            const dialectPreserved = afterDialect >= beforeDialect;
+            const scorePreserved = afterScore >= beforeScore - 2;
+
+            if (dialectPreserved && scorePreserved) {
+              logger.info(
+                { beforeScore, afterScore, beforeDialect, afterDialect, fixedIssues: refinementGate.issues.length },
+                "MSGP Stage 4 micro-refinement accepted",
+              );
+              finalLyricsDraft = candidate;
+            } else {
+              logger.info(
+                { beforeScore, afterScore, beforeDialect, afterDialect, dialectPreserved, scorePreserved },
+                "MSGP Stage 4 micro-refinement rejected — dialect/slang reduced or hit score regressed",
+              );
+            }
+          } else if (refinedSections) {
+            logger.info("MSGP Stage 4 micro-refinement rejected — section line counts or content invalid");
           } else {
-            logger.info({ beforeScore, afterScore }, "MSGP Stage 4 polish rejected — score regression");
+            logger.warn("MSGP Stage 4 micro-refinement returned no parseable JSON");
           }
-        } else if (polishedSections) {
-          logger.info("MSGP Stage 4 polish rejected — section line counts or content invalid");
-        } else {
-          logger.warn("MSGP Stage 4 polish returned no parseable JSON");
+        } catch (err) {
+          logger.warn({ model: MICRO_REFINEMENT_MODEL.name, err }, "MSGP Stage 4 micro-refinement call failed");
         }
-      } catch (err) {
-        logger.warn({ model: SOLAR_POLISH_MODEL.name, err }, "MSGP Stage 4 polish call failed");
+        logger.info({ elapsedMs: Date.now() - stage4Start }, "MSGP Stage 4 complete");
       }
-      logger.info({ elapsedMs: Date.now() - stage4Start }, "MSGP Stage 4 complete");
     }
 
     // ─── STAGE 5 — Light validation + targeted Qwen fix (safety net) ────────
@@ -5157,6 +5739,128 @@ router.post("/generate-song", async (req, res) => {
         }
       }
       logger.info({ elapsedMs: Date.now() - stage55Start }, "MSGP Stage 5.5 complete");
+    }
+
+    // ─── STAGE 5.7 — V13 RUNTIME AUDIT + PER-SECTION REGENERATION ──────────
+    // Programmatic enforcement of the V12 master core HARD FAIL conditions.
+    // Re-runs after Stage 5.5 line-count enforcement so we audit the draft
+    // that would actually ship. If the audit finds offending sections, we
+    // ask the Qwen retry model to rewrite ONLY those sections and re-audit.
+    // Up to 2 fix passes — if violations persist, ship the best draft we
+    // have and log the residual failures for observability. NEVER rewrites
+    // the whole song.
+    if (finalLyricsDraft) {
+      const stage57Start = Date.now();
+      const MAX_AUDIT_PASSES = 2;
+      let lastAudit = runtimeAuditV13(finalLyricsDraft, diversityProfile, emotionTags);
+      logger.info(
+        { failures: lastAudit.failures.map((f) => ({ section: f.section, reasons: f.reasons })) },
+        "MSGP Stage 5.7: initial V13 audit",
+      );
+
+      for (let pass = 1; pass <= MAX_AUDIT_PASSES && !lastAudit.pass; pass += 1) {
+        const regenPrompt = buildV13RegenPrompt(
+          finalLyricsDraft,
+          lastAudit.failures,
+          blueprint ?? ({} as CreativeBlueprint),
+          diversityProfile,
+          emotionTags,
+          selectedGenre,
+          effectiveFlavor,
+        );
+        try {
+          const regenResp = await ai.chat.completions.create({
+            model: QWEN_LYRICS_RETRY_MODEL.id,
+            messages: [
+              { role: "system", content: LYRICS_COMPRESSED_SYSTEM_PROMPT },
+              { role: "user", content: regenPrompt },
+            ],
+            temperature: 0.55,
+            top_p: 0.9,
+            max_tokens: 1800,
+            response_format: { type: "json_object" },
+          }, { signal: AbortSignal.timeout(60_000) });
+
+          const raw = regenResp.choices[0]?.message?.content ?? "";
+          const fixed = parseJson(raw) as Partial<Record<SectionKey, unknown>> | null;
+          if (!fixed) {
+            logger.warn({ pass }, "MSGP Stage 5.7: regen returned no parseable JSON — keeping draft");
+            break;
+          }
+
+          const accepted: Partial<Record<SectionKey, string[]>> = {};
+          const keeper = typeof finalLyricsDraft.keeperLine === "string" ? finalLyricsDraft.keeperLine.trim() : "";
+          for (const f of lastAudit.failures) {
+            const cand = fixed[f.section];
+            if (!Array.isArray(cand)) continue;
+            const cleanLines = cand.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+            const allowed = diversityProfile.sectionLineTargets[f.section] ?? [];
+            // Only accept candidates that satisfy the line-count window —
+            // we never want to accept a fix that breaks Stage 5.5 invariants.
+            if (allowed.length > 0 && !allowed.includes(cleanLines.length)) {
+              logger.warn(
+                { section: f.section, got: cleanLines.length, allowed },
+                "MSGP Stage 5.7: rejected regen — line count not in allowed window",
+              );
+              continue;
+            }
+            // Hook fixes MUST keep the keeperLine verbatim.
+            if (f.section === "hook" && keeper) {
+              const hookText = cleanLines.join(" ").toLowerCase();
+              if (!hookText.includes(keeper.toLowerCase())) {
+                logger.warn({ section: f.section }, "MSGP Stage 5.7: rejected hook regen — keeperLine missing");
+                continue;
+              }
+            }
+            accepted[f.section] = cleanLines;
+          }
+
+          if (Object.keys(accepted).length === 0) {
+            logger.warn({ pass }, "MSGP Stage 5.7: no per-section fixes accepted — stopping");
+            break;
+          }
+
+          const candidate: SongDraft = { ...finalLyricsDraft, ...accepted };
+          const nextAudit = runtimeAuditV13(candidate, diversityProfile, emotionTags);
+          // Strict acceptance: only swap in the candidate if total failure
+          // count strictly decreased. This protects against regressions
+          // where the fix introduces a NEW violation in the same section.
+          if (nextAudit.failures.length < lastAudit.failures.length) {
+            finalLyricsDraft = candidate;
+            lastAudit = nextAudit;
+            logger.info(
+              {
+                pass,
+                accepted: Object.keys(accepted),
+                remainingFailures: nextAudit.failures.map((f) => ({ section: f.section, reasons: f.reasons })),
+              },
+              "MSGP Stage 5.7: per-section regen accepted",
+            );
+          } else {
+            logger.warn(
+              {
+                pass,
+                before: lastAudit.failures.length,
+                after: nextAudit.failures.length,
+              },
+              "MSGP Stage 5.7: regen did not strictly improve audit — discarding",
+            );
+            break;
+          }
+        } catch (err) {
+          logger.warn({ err, pass }, "MSGP Stage 5.7: regen call failed — stopping");
+          break;
+        }
+      }
+
+      logger.info(
+        {
+          elapsedMs: Date.now() - stage57Start,
+          finalPass: lastAudit.pass,
+          residualFailures: lastAudit.failures.map((f) => ({ section: f.section, reasons: f.reasons })),
+        },
+        lastAudit.pass ? "MSGP Stage 5.7 complete — V13 audit clean" : "MSGP Stage 5.7 complete — residual V13 failures (shipping best draft)",
+      );
     }
 
     // ─── STAGE 6 — LANGUAGE LOCALIZATION (LLaMA 3.1 70B, Custom Language only) ─

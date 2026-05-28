@@ -1,0 +1,138 @@
+TASK: Replace Solar polish model with GPT-OSS-120B and update its role to strict micro-refinement.
+
+---
+
+CHANGE SUMMARY:
+
+We are replacing the current Stage 4 model:
+
+OLD:
+
+* Model: SOLAR-10.7B-Instruct
+* Role: Lyrics Polishing (free rewrite)
+
+NEW:
+
+* Model: gpt-oss-120b
+* Role: Micro-Refinement Engine (STRICT PRESERVATION MODE)
+
+---
+
+REASON FOR CHANGE:
+
+SOLAR is degrading lyric quality by:
+
+* flattening dialect and slang
+* converting street language into standard English
+* reducing emotional intensity
+* rewriting rhythm and phrasing
+
+This breaks AfroMuse’s core intelligence layers (style, emotion, chant behavior).
+
+GPT-OSS-120B will be used instead, but under strict constraints to PRESERVE output, not rewrite it.
+
+---
+
+IMPLEMENTATION CHANGES:
+
+1. In generate-song.ts:
+
+* Replace all references to:
+  "solar-10.7b-instruct"
+
+WITH:
+"gpt-oss-120b"
+
+---
+
+2. Update Stage 4 prompt:
+
+REPLACE existing Solar prompt with:
+
+ROLE: MICRO-REFINEMENT ENGINE (PRESERVE STYLE AT ALL COSTS)
+
+You are NOT a rewriter.
+You are NOT a translator.
+You are NOT allowed to improve creatively.
+
+Your job is to LIGHTLY refine lyrics while preserving 100% of:
+
+* dialect
+* slang
+* rhythm
+* emotional tone
+* structure
+* line count
+* repetition patterns
+
+STRICT RULES:
+
+1. DO NOT change dialect or slang
+2. DO NOT translate into standard English
+3. DO NOT change flow or rhythm
+4. DO NOT rewrite lines unless absolutely necessary
+5. DO NOT reduce repetition
+6. DO NOT change emotional intensity
+
+YOU MAY ONLY:
+
+* fix broken grammar
+* remove accidental duplicated words
+* fix malformed sentences
+
+HARD CONSTRAINTS:
+
+* Line count per section MUST remain identical
+* Section structure MUST NOT change
+
+SELF-CHECK:
+If slang, tone, or rhythm changed → revert to original
+
+OUTPUT:
+Return same structure with minimal corrections only
+
+---
+
+3. Add acceptance gate (IMPORTANT):
+
+After Stage 4 output:
+
+* Compare original vs refined lyrics
+* Reject refined version if:
+
+  * line count changed
+  * slang/dialect reduced
+  * emotional tone weakened
+
+If rejected → keep original Qwen output
+
+---
+
+4. Execution logic:
+
+* Stage 4 should NOT always run
+* Only trigger if:
+
+  * grammar issues detected
+  * malformed lines detected
+  * structure violations detected
+
+Otherwise:
+→ SKIP Stage 4 entirely
+
+---
+
+EXPECTED RESULT:
+
+* Lyrics retain raw authenticity from Qwen
+* Dialect and slang preserved (Afrobeats / Dancehall)
+* No more “clean but weak” output
+* Structural fixes only when necessary
+
+---
+
+Do not modify other stages.
+Do not change blueprint or emotion engine.
+Only update Stage 4 behavior and model.
+
+---

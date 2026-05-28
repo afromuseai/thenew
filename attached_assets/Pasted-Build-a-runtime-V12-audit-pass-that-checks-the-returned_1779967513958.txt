@@ -1,0 +1,99 @@
+Build a runtime V12 audit pass that checks the returned lyrics draft against the HARD FAIL conditions (line count, adjacent CORE plateau, hook identity drift, wrong-emotion adlibs, missed section role) and triggers programmatic per-section regeneration — so the contract is enforced both in-prompt AND post-generation
+
+DIALECT AUTHENTICITY RULE:
+
+If genre or artist implies a dialect (e.g. Dancehall, Afrobeats street, Drill, etc):
+
+1. DO NOT translate from English
+2. DO NOT replace words one-to-one
+3. SWITCH to native grammar system
+
+Enforce:
+
+- sentence structure
+- slang usage
+- rhythm of speech
+- contraction patterns
+
+If output reads like "English with swapped words" → REWRITE internally before returning.
+
+
+Dancehall Mode:
+
+- Use real Jamaican Patois structure
+- Avoid "de", "fi de", "we a" spam patterns
+- Use natural phrasing like:
+
+mi nah
+dem cyaan
+weh dem know bout
+inna di place
+nuh easy
+man a rise
+
+Focus on rhythm + punch, not literal grammar correctness.
+
+Fix section emotion labels to use dynamic emotionTags.
+
+Replace:
+
+section.title = "[VERSE 1 - Anthemic / Energetic]"
+
+With:
+
+section.title = "[VERSE 1 - " + emotionTags.verse1 + "]"
+
+Source:
+draft.emotionTags
+
+Fallback:
+Only use default labels IF emotionTags is missing.
+
+Ensure emotionTags per section are:
+
+- unique
+- progressive
+- not reused across sections
+
+If duplicate detected → append variation or regenerate tag
+
+EMOTION → WRITING ENFORCEMENT:
+
+Each section emotion MUST change:
+
+- line length
+- repetition level
+- energy
+- vocal tone
+- adlibs
+
+If two sections sound similar → rewrite one.
+
+HOOK QUALITY RULE:
+
+If hook uses repetition:
+
+- MUST evolve per line
+- MUST include variation OR crowd interaction
+- MUST build energy
+
+Reject flat repetition loops like:
+"We a scream / We a scream / We a scream"
+
+
+GENRE DOMINANCE RULE:
+
+Genre overrides default writing style.
+
+Dancehall:
+- rough phrasing
+- rhythmic punch
+- slang-heavy
+- shorter lines
+
+Afrobeats:
+- melodic
+- smoother flow
+- emotional layering
+
+Do NOT mix unintentionally.
