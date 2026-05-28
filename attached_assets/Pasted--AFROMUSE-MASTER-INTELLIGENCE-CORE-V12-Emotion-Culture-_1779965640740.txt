@@ -1,0 +1,175 @@
+🔥 AFROMUSE MASTER INTELLIGENCE CORE V12
+(Emotion + Culture + Voice Unified Layer)
+
+This sits where your Stage 2 (lyrics brain) reads from.
+Not a full orchestrator rewrite — just the core brain upgrade.
+
+🧠 MASTER RULE (THIS DRIVES EVERYTHING)
+Lyrics must be written based on:
+1. Emotion progression (not static tags)
+2. Cultural thinking (not translation)
+3. Vocal behavior (not just words)
+4. Blueprint authority (not examples)
+⚙️ 1. EMOTION INTELLIGENCE (FIXES YOUR MAIN ISSUE)
+❌ Old behavior:
+Same tags reused
+Emotion doesn’t follow story
+✔ New system:
+Each section MUST have:
+- A unique emotional state
+- A progression from previous section
+- A behavioral impact on lyrics (flow, repetition, tone)
+🎭 EMOTION → BEHAVIOR ENGINE
+
+Instead of labels like:
+
+“Emotional Peak”
+
+You enforce:
+
+Emotion = HOW the artist performs, not what it's called
+Example mapping:
+Emotion Type	Behavior
+Pain	slower lines, repetition, broken phrasing
+Joy	bounce, chant, call-response
+Struggle	storytelling + tension
+Victory	confident, declarative lines
+Prayer	spaced lines, spiritual adlibs
+🔁 EMOTION PROGRESSION RULE
+Emotion must evolve across sections:
+
+Intro → feeling
+Verse 1 → experience
+Hook → statement
+Verse 2 → escalation/change
+Bridge → emotional shift
+Outro → resolution
+🌍 2. CULTURAL VOICE ENGINE (NO MORE TRANSLATION FEEL)
+If custom_language is active:
+→ Switch to CULTURAL THINKING MODE
+→ Disable English phrasing logic
+🎭 CULTURAL THINKING RULE
+Write like a native speaker FEELS, not how English translates
+🔥 LANGUAGE BEHAVIOR SYSTEM
+
+Instead of listing languages, you enforce:
+
+Detect language style → apply:
+
+- rhythm style
+- emotional expression style
+- repetition behavior
+- metaphor density
+Example:
+Street language → broken grammar allowed
+Spiritual language → slower pacing + chants
+Romantic language → melodic phrasing
+🎙️ 3. ACCENT & DIALECT ENGINE
+
+This is where realism comes from.
+
+Language + Emotion = Delivery Style
+RULES:
+Same language MUST sound different per emotion
+Same emotion MUST sound different per culture
+Example:
+
+Pain
+
+Pidgin → raw, repetitive, street survival tone
+Yoruba → reflective, wisdom-based
+Italian → expressive, dramatic
+Chinese → minimal, metaphor-heavy
+🎵 4. HOOK + CHANT INTELLIGENCE
+
+(You asked for Asake-style behavior earlier — this fixes it globally)
+
+HOOK ENGINE RULE:
+Hook must choose ONE of:
+
+- Chant
+- Melody
+- Call & response
+- Minimal mantra
+AUTO-CHANT TRIGGER
+If:
+- high energy
+- street tone
+- repetition-friendly phrase
+
+→ Hook becomes chant-based
+→ Add crowd response naturally
+🔊 5. ADLIB INTELLIGENCE (NO MORE RANDOM “eh!”)
+Adlibs must match:
+- emotion
+- culture
+- section role
+Examples:
+Emotion	Adlib Style
+Pain	(ahh), (why), (hmm)
+Prayer	(amen), (jah), (lord)
+Street	(oya!), (gba!), (who dey!)
+Victory	(yeah!), (we up!), (run am!)
+🧱 6. STRUCTURE ENFORCEMENT (YOU COMPLAINED ABOUT THIS)
+Verse line count MUST be:
+8 OR 12 OR 16 (strict)
+FLEX RULE:
+Can vary ONLY if:
+chant-based structure
+or cultural override (poetic languages)
+
+Otherwise:
+
+❌ Reject generation internally
+
+🧠 7. BLUEPRINT IS LAW
+
+This fixes your biggest system flaw.
+
+Lyrics MUST follow blueprint:
+- emotion_map
+- flow_map
+- hook structure
+- section targets
+
+NOT:
+
+examples
+default patterns
+previous outputs
+🧩 8. MODEL RESPONSIBILITY (CLEAN, NO CONFUSION)
+
+You already built this — we just lock it properly:
+
+Stage 1 — Blueprint (Maverick)
+decides structure
+emotion progression
+hook type
+cultural tone direction
+Stage 2 — Emotion Engine (LLaMA 3.2 3B)
+assigns evolving emotion tags
+ensures uniqueness
+maps emotion → behavior
+Stage 3 — Lyrics (Qwen 122B)
+writes lyrics ONLY
+must obey:
+blueprint
+emotion behavior
+cultural voice rules
+Stage 4 — Polish (Solar)
+cleans, not rewrites
+preserves structure + emotion
+(Optional)
+Stage 5 — Language Engine (LLaMA 70B)
+activates ONLY if custom language is used
+enforces native expression
+🚫 9. HARD FAIL CONDITIONS
+
+Reject or fix internally if:
+
+emotion tags repeat without progression
+verses not 8/12/16 lines
+hook has no identity
+adlibs feel random
+language feels translated
+blueprint not followed

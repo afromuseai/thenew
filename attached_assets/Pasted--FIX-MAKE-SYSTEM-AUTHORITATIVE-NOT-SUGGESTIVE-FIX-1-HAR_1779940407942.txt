@@ -1,0 +1,150 @@
+🔥 FIX: MAKE SYSTEM AUTHORITATIVE (NOT SUGGESTIVE)
+✅ FIX 1 — HARD LINE COUNT ENFORCER
+
+Add this to Qwen Stage 3 SYSTEM prompt:
+
+STRICT STRUCTURE ENFORCEMENT:
+
+You MUST obey exact line counts.
+
+Allowed:
+- Verse: 8, 12, or 16 lines ONLY
+- Intro: EXACTLY 2 or 4 lines (based on blueprint)
+- Chorus: EXACTLY as specified
+
+If line count is incorrect:
+REWRITE the section before continuing.
+
+Do NOT approximate.
+Do NOT exceed.
+Do NOT go under.
+
+👉 This alone will fix 70% of your structure issues.
+
+✅ FIX 2 — EMOTION TAG BINDING (CRITICAL)
+
+Right now:
+Emotion tags = decorative
+
+You need:
+Emotion tags = behavior controller
+
+Add this:
+
+EMOTION BINDING RULE:
+
+Each section has an assigned emotion tag.
+
+You MUST:
+- Reflect that emotion in WORD CHOICE
+- Reflect it in RHYTHM
+- Reflect it in DELIVERY STYLE
+
+If the lyrics do not match the emotion:
+REWRITE the section.
+
+Examples:
+- "Pain Chant" → short lines, repetition, vocal strain
+- "Street Hype" → punchy, loud, chantable
+- "Prayer Wave" → spiritual tone, spaced delivery
+✅ FIX 3 — BAN GENERIC EMOTION TAGS
+
+Right now your system allows fallback to safe tags.
+
+Kill that.
+
+In Emotion Engine prompt:
+
+BANNED TAGS:
+- Anthemic / Energetic
+- Calm Resolution
+- Emotional Peak
+- Confident & Rhythmic
+- Smooth & Seductive
+
+If generated → REGENERATE
+
+👉 This forces originality.
+
+✅ FIX 4 — TAG VARIATION LOGIC
+
+Add this to Emotion Engine:
+
+GLOBAL VARIATION RULE:
+
+No two sections may share the same emotional tag.
+
+Each tag must:
+- Be unique
+- Reflect progression of the story
+
+Emotion must evolve:
+Start → Struggle → Pressure → Release → Resolution
+✅ FIX 5 — BLUEPRINT MUST CONTROL QWEN (NOT SUGGEST)
+
+Right now you pass blueprint.
+
+But Qwen is still “interpreting” it.
+
+Change your Stage 3 instruction:
+
+BLUEPRINT AUTHORITY RULE:
+
+The blueprint is NOT a suggestion.
+
+It is the SOURCE OF TRUTH.
+
+You MUST:
+- Follow section emotion exactly
+- Follow structure exactly
+- Follow flow_map exactly
+
+Do NOT reinterpret.
+Do NOT override.
+Do NOT simplify.
+✅ FIX 6 — REMOVE FILLER DEPENDENCY
+
+Add:
+
+FILLER CONTROL:
+
+Do NOT overuse:
+- "eh"
+- "mmm"
+- "oh Lord"
+
+Use ONLY if:
+- Emotion explicitly requires it
+- It enhances delivery
+
+Max:
+- 1 filler per 4 lines
+✅ FIX 7 — POST-GENERATION VALIDATOR (VERY IMPORTANT)
+
+Before returning lyrics:
+
+VALIDATE:
+- Line count per section ✔
+- Emotion matches content ✔
+- No duplicate tags ✔
+- No banned tags ✔
+
+If any fail:
+AUTO-REWRITE only the broken section
+🎯 OPTIONAL (HIGH IMPACT)
+
+Since you now have:
+
+Maverick → structure
+LLaMA 3.2 → emotion
+Qwen → lyrics
+Solar → polish
+
+You can add one more lightweight step:
+
+👉 MICRO “STRUCTURE FIXER” (Solar or 3B)
+
+Job:
+
+ONLY fix line counts + minor flow
+NEVER rewrite content

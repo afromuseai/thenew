@@ -1,0 +1,151 @@
+🌍 AFROMUSE CULTURAL VOICE ENGINE V11
+(ACCENT • DIALECT • NATURAL EXPRESSION SYSTEM)
+
+This upgrade ensures lyrics don’t feel translated — they feel born inside the language culture.
+
+🧠 CORE PROBLEM YOU’RE FIXING
+
+Right now your system:
+
+Generates correct language words
+BUT emotional delivery is still “English-brain structure”
+
+So you get:
+❌ Yoruba words with English rhythm
+❌ Twi words with Western phrasing
+❌ Chinese/Italian lines that feel “written, not lived”
+
+🔥 CORE SOLUTION
+
+We introduce:
+
+🎭 Cultural Thinking Layer (CTL)
+
+This layer forces the model to THINK inside the culture, not translate into it.
+
+⚙️ 1. CULTURAL VOICE ACTIVATION RULE
+
+When custom_language ≠ English:
+
+ACTIVATE: Cultural Voice Engine
+DISABLE: English sentence structuring bias
+🧠 2. CULTURAL THINKING MODES
+
+Each language gets a thinking personality, NOT just translation.
+
+🇳🇬 YORUBA MODE (Wisdom + Proverb Flow)
+Short emotional bursts
+Proverbs instead of explanations
+Spiritual undertone
+Respectful rhythm pacing
+
+Example behavior:
+
+“Life is heavy” → becomes proverb-based expression
+Emotional repetition used for emphasis, not filler
+🇬🇭 TWI MODE (Reflective + Story Rhythm)
+Slow emotional storytelling
+Moral reflection in lines
+Soft repetition for emphasis
+Family + survival themes dominate tone
+🇳🇬 Pidgin MODE (Street Natural Flow)
+Broken grammar allowed intentionally
+Emotion comes through repetition + rhythm
+Call-and-response is natural, not forced
+Humor + pain can coexist in same line
+🇨🇳 CHINESE MODE (Emotional Compression)
+Meaning is condensed, not expanded
+Metaphors replace direct emotion
+Tone carries weight more than words
+Less repetition, more symbolic phrasing
+🇮🇹 ITALIAN MODE (Melodic Emotional Speech)
+Naturally musical phrasing
+Emotion expressed through flow, not explanation
+Romantic exaggeration allowed
+Sentence endings carry emotional lift
+🔁 3. DIALECT RULE (MOST IMPORTANT)
+
+Even within same language:
+
+Emotion must shift pronunciation style + rhythm
+
+Example:
+
+Angry Yoruba ≠ Prayer Yoruba
+Street Pidgin ≠ Gospel Pidgin
+Sad Twi ≠ Celebratory Twi
+
+So you now define:
+
+Language + Emotion = Unique Voice Style
+🎭 4. CULTURAL EMOTION MAPPING
+
+Emotion tags MUST adapt per culture:
+
+Example:
+“Pain”
+English → Emotional Peak / Sad Reflection
+Yoruba → “Pain with wisdom / destiny struggle tone”
+Pidgin → “Survival pain / street endurance voice”
+Twi → “Family burden sorrow tone”
+Chinese → “Silent internal suffering metaphor”
+Example:
+“Joy”
+Yoruba → Praise + gratitude expression
+Pidgin → Celebration + street triumph
+Twi → community victory reflection
+Italian → melodic emotional overflow
+Chinese → subtle poetic satisfaction
+🧱 5. TRANSLATION IS NOW FORBIDDEN (IMPORTANT)
+
+❌ OLD SYSTEM:
+
+Generate English → translate
+
+✔ NEW SYSTEM:
+
+Generate DIRECTLY in cultural thinking mode
+
+This is what fixes “robotic foreign language lyrics”.
+
+🎯 6. LYRICS STRUCTURE FLEXIBILITY RULE
+
+You correctly noticed structure issues earlier.
+
+Now:
+
+Structure rules are LOOSENED per language:
+English → strict 8/12/16 lines
+Pidgin → flexible chant rhythm allowed
+Yoruba → proverb pacing overrides line count rigidity
+Chinese → short poetic lines allowed
+Italian → melodic phrase breaks allowed
+
+👉 BUT:
+Still controlled by rhythm engine (not chaos)
+
+🔥 7. ACCENT SIMULATION LAYER (NEW)
+
+This is what makes it feel real.
+
+Each language gets:
+
+rhythm pacing style
+repetition style
+emotional pacing style
+syllable density control
+
+Example:
+
+Pidgin → high repetition, fast rhythm
+Twi → slower emotional unfolding
+Yoruba → balanced rhythm with spiritual pauses
+🧠 8. MASTER RULE (IMPORTANT)
+
+“A language is not text — it is a behavior system”
+
+So your model must:
+
+Think inside culture
+Feel inside culture
+Speak like native emotional memory

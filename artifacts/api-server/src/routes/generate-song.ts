@@ -1441,6 +1441,410 @@ function getDialectSubStyleBlock(dialectStyle: string): string[] {
   return [];
 }
 
+// ─── V11 CULTURAL VOICE ENGINE ──────────────────────────────────────────
+// "A language is not text — it is a behavior system."
+// When the language is non-English, this block forces the model to THINK
+// in the cultural voice instead of translating from English. Each language
+// has its own thinking mode (Yoruba = proverb wisdom, Twi = reflective
+// story, Pidgin = street natural, Chinese = compression, Italian = melodic).
+// Layers added per language:
+//   1. Cultural thinking mode (the personality of the language)
+//   2. Dialect × Emotion rule (CORE EMOTION modifies pronunciation/voice)
+//   3. Translation forbidden (generate IN-language, never translate-to)
+//   4. Structure flexibility (Pidgin chant / Yoruba proverb / Chinese poetic / Italian melodic)
+//   5. Accent simulation (rhythm pacing, repetition density, syllable weight)
+type CulturalVoiceProfile = {
+  flag: string;
+  name: string;
+  thinkingMode: string;
+  emotionalDelivery: string[];
+  rhythmPacing: string;
+  repetitionStyle: string;
+  syllableDensity: string;
+  structureFlex: string;
+  emotionLensExamples: string[];
+};
+function getCulturalVoiceProfile(effectiveFlavor: string): CulturalVoiceProfile | null {
+  const f = effectiveFlavor.toLowerCase();
+  // Patois + Pidgin already have detailed dialect blocks above. We still
+  // wrap a thinner V11 cultural-voice frame around them to enforce the
+  // "think in the culture, don't translate" rule and the dialect×emotion law.
+  if (f.includes("yoruba")) {
+    return {
+      flag: "🇳🇬",
+      name: "Yoruba",
+      thinkingMode: "Wisdom + Proverb Flow — short emotional bursts, proverbs instead of explanations, spiritual undertone, respectful rhythm pacing.",
+      emotionalDelivery: [
+        "Use proverbs and idioms in place of literal explanation when emotion runs deep.",
+        "Repetition is for EMPHASIS (chant-like reinforcement), never filler.",
+        "Spiritual undertone — destiny, ori, ìfẹ́, agbára — should sit underneath even non-spiritual themes.",
+        "Respectful pacing — short lines breathe; pauses carry meaning.",
+      ],
+      rhythmPacing: "balanced — alternating short emotional bursts with breathing pauses",
+      repetitionStyle: "medium — chanted reinforcement on key emotional beats only",
+      syllableDensity: "compressed — Yoruba carries weight per word; do not pad",
+      structureFlex: "loosened to PROVERB PACING — line counts may be honored by combining a proverb-line + response-line into one structural line if the cadence demands it",
+      emotionLensExamples: [
+        "Pain → 'Pain with wisdom / destiny struggle tone' (not generic sadness)",
+        "Joy  → 'Praise + gratitude expression' (ọpẹ́, not just happiness)",
+      ],
+    };
+  }
+  if (f.includes("twi") || f.includes("akan")) {
+    return {
+      flag: "🇬🇭",
+      name: "Twi",
+      thinkingMode: "Reflective + Story Rhythm — slow emotional storytelling, moral reflection in lines, soft repetition for emphasis.",
+      emotionalDelivery: [
+        "Tell, don't declare — emotions surface through unfolding story, not labels.",
+        "Family, ancestry, and survival themes naturally tint the tone.",
+        "Soft repetition — repeat a key phrase quietly across sections, not loudly within one.",
+        "Moral reflection lines (a quiet observation about life) carry weight.",
+      ],
+      rhythmPacing: "slow — emotional unfolding, give each line room",
+      repetitionStyle: "soft / low — quiet recurrence across sections beats loud recurrence within one",
+      syllableDensity: "normal — natural conversational density, not condensed",
+      structureFlex: "loosened to STORY PACING — line count windows respected, but a reflective beat may take an extra short line if story requires it",
+      emotionLensExamples: [
+        "Pain → 'Family burden sorrow tone' (communal weight, not solo)",
+        "Joy  → 'Community victory reflection' (we, not I)",
+      ],
+    };
+  }
+  if (f.includes("pidgin") || (f.includes("naija") && !f.includes("english only"))) {
+    return {
+      flag: "🇳🇬",
+      name: "Pidgin",
+      thinkingMode: "Street Natural Flow — broken grammar allowed intentionally; emotion comes through repetition + rhythm; humor and pain coexist.",
+      emotionalDelivery: [
+        "Broken grammar is a FEATURE, not a flaw — write it as people speak.",
+        "Call-and-response feels natural here — let it emerge, never force it.",
+        "Humor and pain can sit in the same line — that contrast IS the voice.",
+        "Repetition and rhythm carry the feeling more than vocabulary.",
+      ],
+      rhythmPacing: "fast — punchy, rhythmic, street-tempo",
+      repetitionStyle: "high — chant-style reinforcement is core to the voice",
+      syllableDensity: "normal — natural spoken density, not poetic compression",
+      structureFlex: "loosened to CHANT RHYTHM — chant-block lines may collapse 2 short hits into 1 line, or split a long line into 2 chant beats, if the pulse demands it",
+      emotionLensExamples: [
+        "Pain → 'Survival pain / street endurance voice' (the trenches, not the diary)",
+        "Joy  → 'Celebration + street triumph' (loud, communal, lit)",
+      ],
+    };
+  }
+  if (f.includes("patois") || f.includes("jamaican")) {
+    return {
+      flag: "🇯🇲",
+      name: "Patois",
+      thinkingMode: "Yard-Native Conviction — every line conceived in Patois, never translated. Faith, hustle, and street weight carry the voice.",
+      emotionalDelivery: [
+        "Conceived in Patois from the first word — never an English thought wearing Patois clothing.",
+        "Faith / Jah / Most High naturally tint emotional peaks even outside spiritual themes.",
+        "Compression is power — Patois short lines hit harder than long English explanations.",
+        "Real life imagery (the yard, the road, the hustle) over floating metaphor.",
+      ],
+      rhythmPacing: "fast — punchy, declarative, riddim-bound",
+      repetitionStyle: "high — chanted hooks, repeated declarations carry weight",
+      syllableDensity: "compressed — Patois sentence logic compresses meaning",
+      structureFlex: "loosened to RIDDIM CHANT — chant lines may collapse / split when the riddim demands, but each line must still be conceived in Patois",
+      emotionLensExamples: [
+        "Pain → 'Yard-born struggle voice' (the road, not the diary)",
+        "Joy  → 'Triumph testimony' (Jah-praise inflected)",
+      ],
+    };
+  }
+  if (f.includes("chinese") || f.includes("mandarin") || f.includes("cantonese")) {
+    return {
+      flag: "🇨🇳",
+      name: "Chinese",
+      thinkingMode: "Emotional Compression — meaning is condensed, not expanded. Metaphors replace direct emotion. Tone carries weight more than words.",
+      emotionalDelivery: [
+        "Compress — say less, let weight sit underneath.",
+        "Metaphor over declaration — the moon, the river, the empty cup carry the feeling.",
+        "Less repetition, more symbolic phrasing.",
+        "Tone (mood, color, pacing) does more work than vocabulary.",
+      ],
+      rhythmPacing: "slow — measured, contemplative, breath-heavy",
+      repetitionStyle: "low — symbolic single-strikes beat repeated phrasing",
+      syllableDensity: "compressed — short poetic lines are normal and welcome",
+      structureFlex: "loosened to POETIC LINES — short 2–4 syllable lines acceptable; line-count windows may be met with shorter, denser lines",
+      emotionLensExamples: [
+        "Pain → 'Silent internal suffering metaphor' (held in, not spoken)",
+        "Joy  → 'Subtle poetic satisfaction' (a smile, not a shout)",
+      ],
+    };
+  }
+  if (f.includes("italian")) {
+    return {
+      flag: "🇮🇹",
+      name: "Italian",
+      thinkingMode: "Melodic Emotional Speech — naturally musical phrasing; emotion expressed through flow, not explanation; romantic exaggeration allowed.",
+      emotionalDelivery: [
+        "Phrases sing — let cadence, vowels, and line endings carry emotion.",
+        "Sentence endings should LIFT — that's where the emotional weight lands.",
+        "Romantic exaggeration is welcome — operatic intensity is native here.",
+        "Flow over explanation — say it musically, not analytically.",
+      ],
+      rhythmPacing: "balanced — flowing, musical, lift-on-endings",
+      repetitionStyle: "low — variation and lift carry the song, not chant repetition",
+      syllableDensity: "melodic — vowel-rich phrasing, naturally singable",
+      structureFlex: "loosened to MELODIC PHRASES — phrase breaks may shift line counts by ±1 if a melodic lift requires it",
+      emotionLensExamples: [
+        "Pain → 'Operatic ache' (lifted, not muted)",
+        "Joy  → 'Melodic emotional overflow' (exuberance is the default)",
+      ],
+    };
+  }
+  if (f.includes("french")) {
+    return {
+      flag: "🇫🇷",
+      name: "French",
+      thinkingMode: "Intimate Lyrical Phrasing — chanson cadence; understated emotion that lands through phrasing, not volume.",
+      emotionalDelivery: [
+        "Understatement carries more weight than declaration.",
+        "Liaison and rhythm matter — let the language flow naturally between words.",
+        "Imagery > announcement — show the rain, don't say it's sad.",
+      ],
+      rhythmPacing: "balanced — measured, intimate, conversational-lyrical",
+      repetitionStyle: "low / medium — refrain repetition is fine, in-section repetition is not",
+      syllableDensity: "melodic — natural French rhythm, vowel-flowing",
+      structureFlex: "loosened to LYRICAL PHRASES — line counts respected, phrase breaks may shift ±1 for natural cadence",
+      emotionLensExamples: [
+        "Pain → 'Quiet melancholy chanson tone'",
+        "Joy  → 'Warm intimate celebration'",
+      ],
+    };
+  }
+  if (f.includes("spanish") || f.includes("español")) {
+    return {
+      flag: "🇪🇸",
+      name: "Spanish",
+      thinkingMode: "Passionate Direct Expression — emotional honesty, rhythmic phrasing, body-and-soul delivery.",
+      emotionalDelivery: [
+        "Emotion is direct and embodied — not understated.",
+        "Rhythm and percussion live in the language itself — let phrasing dance.",
+        "Faith, family, love, and longing tint the emotional palette.",
+      ],
+      rhythmPacing: "fast / balanced — rhythmic, danceable, passionate",
+      repetitionStyle: "medium — refrains and chants are natural to the voice",
+      syllableDensity: "normal — natural Spanish density, not compressed",
+      structureFlex: "loosened to RHYTHMIC FLOW — refrain lines may extend if the chorus demands it",
+      emotionLensExamples: [
+        "Pain → 'Aching passionate ballad voice' (sentido, not subdued)",
+        "Joy  → 'Celebratory dance-floor energy'",
+      ],
+    };
+  }
+  if (f.includes("swahili")) {
+    return {
+      flag: "🇰🇪",
+      name: "Swahili",
+      thinkingMode: "Communal Storytelling — proverb-rich, family-anchored, rhythmically flowing.",
+      emotionalDelivery: [
+        "Proverbs (methali) carry emotional truth more than direct statement.",
+        "Community / family is the emotional default — 'we' before 'I'.",
+        "Bantu rhythm — natural cadence that flows across lines.",
+      ],
+      rhythmPacing: "balanced — flowing, communal, conversational",
+      repetitionStyle: "medium — refrain-style, not chant-style",
+      syllableDensity: "normal — natural Bantu rhythm",
+      structureFlex: "loosened to PROVERB-FLOW PACING — proverb lines may borrow length if the wisdom requires it",
+      emotionLensExamples: [
+        "Pain → 'Communal burden / wisdom-tinted struggle'",
+        "Joy  → 'Celebration with gratitude (asante) tone'",
+      ],
+    };
+  }
+  return null; // English / unrecognized → no V11 block (English keeps strict structure)
+}
+
+function getCulturalVoiceEngineBlock(effectiveFlavor: string): string[] {
+  const profile = getCulturalVoiceProfile(effectiveFlavor);
+  if (!profile) return [];
+  return [
+    "",
+    `═══ ${profile.flag} V11 CULTURAL VOICE ENGINE — ${profile.name.toUpperCase()} MODE ═══`,
+    `THINKING MODE: ${profile.thinkingMode}`,
+    "",
+    "🚫 TRANSLATION IS FORBIDDEN.",
+    `Generate DIRECTLY in ${profile.name} cultural thinking mode. If you write the line in`,
+    "English first and swap words, that line FAILS. Conceive the thought IN the language.",
+    "Test before keeping a line: 'Is this how a native artist would feel and say this?'",
+    "",
+    `EMOTIONAL DELIVERY (${profile.name}):`,
+    ...profile.emotionalDelivery.map((s) => `  - ${s}`),
+    "",
+    `DIALECT × EMOTION LAW:`,
+    `  Same language sounds DIFFERENT per emotion. Use the CORE EMOTION word from`,
+    `  Stage 2's tag (e.g. "Pressure", "Aching Loss", "Burning Anger") to modify`,
+    `  phrasing, pacing, and pronunciation. Examples:`,
+    `    Angry ${profile.name} ≠ Prayer ${profile.name}`,
+    `    Street ${profile.name} ≠ Gospel ${profile.name}`,
+    `  Match the section's CORE EMOTION — let it shape the voice.`,
+    "",
+    `CULTURAL EMOTION LENS:`,
+    ...profile.emotionLensExamples.map((s) => `  - ${s}`),
+    "",
+    `ACCENT SIMULATION (${profile.name}):`,
+    `  - rhythm pacing:    ${profile.rhythmPacing}`,
+    `  - repetition style: ${profile.repetitionStyle}`,
+    `  - syllable density: ${profile.syllableDensity}`,
+    "",
+    `STRUCTURE FLEX (${profile.name}):`,
+    `  ${profile.structureFlex}`,
+    `  SECTION LINE TARGETS still apply — but you may collapse 2 ultra-short lines`,
+    `  into 1 (or split 1 long line into 2) when the rhythm of ${profile.name} demands it.`,
+    "═══════════════════════════════════════════════════════════════════════",
+    "",
+  ];
+}
+
+// ─── V12 MASTER INTELLIGENCE CORE ───────────────────────────────────────
+// "Lyrics must be written based on EMOTION PROGRESSION + CULTURAL THINKING
+//  + VOCAL BEHAVIOR + BLUEPRINT AUTHORITY."
+// V12 unifies the five preceding hardenings into one in-prompt contract:
+//   1. Emotion → BEHAVIOR mapping  (emotion is HOW the artist performs,
+//      not just a label — Pain ≠ Joy in line length, repetition, phrasing)
+//   2. Section emotional ROLE      (Intro=feeling, Verse1=experience,
+//      Hook=statement, Verse2=escalation, Bridge=shift, Outro=resolution)
+//   3. Hook IDENTITY type          (Chant / Melody / Call-Response /
+//      Minimal Mantra) with auto-suggestion based on the V10 arc archetype
+//   4. Adlib EMOTION × CULTURE matrix  (typed adlib bank by feeling)
+//   5. HARD FAIL conditions        (consolidated rejection list)
+// V8.1/V9 (blueprint authority + 8/12/16) and V10 (arc + composite tags)
+// and V11 (cultural thinking) remain in force — V12 is the behavior /
+// vocal-execution layer on top.
+type V12HookHint = {
+  primary: "Chant" | "Melody" | "Call-and-Response" | "Minimal Mantra";
+  why: string;
+};
+function suggestV12HookIdentity(arcArchetype: ArcArchetype | null | undefined, effectiveFlavor: string): V12HookHint {
+  const f = effectiveFlavor.toLowerCase();
+  const arcId = arcArchetype?.id;
+  // Auto-chant trigger: street tone OR struggle/protest arc → chant + crowd response
+  const streetCulture =
+    f.includes("pidgin") || f.includes("patois") || f.includes("naija") || f.includes("yoruba");
+  if (arcId === "struggle" || arcId === "protest" || (streetCulture && arcId !== "romantic")) {
+    return {
+      primary: "Chant",
+      why: "high-energy / street / struggle arc → chant hook with crowd response (auto-trigger)",
+    };
+  }
+  if (arcId === "romantic") {
+    return {
+      primary: "Melody",
+      why: "romantic arc → melodic hook with vowel-flowing phrasing",
+    };
+  }
+  if (arcId === "uplift") {
+    return {
+      primary: "Call-and-Response",
+      why: "uplift arc → leader/crowd call-and-response feels triumphant and shareable",
+    };
+  }
+  return {
+    primary: "Minimal Mantra",
+    why: "default → tight repeated mantra phrase (3–5 words) that fans can chant back",
+  };
+}
+
+function getMasterIntelligenceCoreV12Block(
+  arcArchetype: ArcArchetype | null | undefined,
+  effectiveFlavor: string,
+): string[] {
+  const hookHint = suggestV12HookIdentity(arcArchetype, effectiveFlavor);
+  const f = effectiveFlavor.toLowerCase();
+  const isAfricanStreet =
+    f.includes("pidgin") || f.includes("patois") || f.includes("naija") || f.includes("yoruba") || f.includes("twi");
+  const isLatinRomance =
+    f.includes("italian") || f.includes("spanish") || f.includes("french");
+  // Adlib matrix is culture-tinted: African street palette emphasizes
+  // street/prayer adlibs (oya, gba, jah, amen); Latin romance leans
+  // melodic exclamations; Chinese leans minimal.
+  const adlibCulturePalette = isAfricanStreet
+    ? "(African street palette: oya, gba, jah, amen, who dey, run am, eh)"
+    : isLatinRomance
+    ? "(Latin/romance palette: melodic exclamations, sighs, vowel-led emphasis)"
+    : f.includes("chinese") || f.includes("mandarin") || f.includes("cantonese")
+    ? "(Chinese palette: minimal — prefer single-syllable emphasis or breath, not English-style adlibs)"
+    : "(neutral palette: pull from blueprint adlib_style only)";
+  return [
+    "",
+    "═══ 🔥 V12 MASTER INTELLIGENCE CORE — UNIFIED EXECUTION CONTRACT ═══",
+    "Lyrics MUST satisfy ALL FOUR pillars in the same draft:",
+    "  ① Emotion PROGRESSION (no static labels — each section evolves)",
+    "  ② Cultural THINKING   (no translation feel — see V11 block)",
+    "  ③ Vocal BEHAVIOR      (emotion = HOW the artist performs)",
+    "  ④ Blueprint AUTHORITY (blueprint > examples > defaults)",
+    "",
+    "─── EMOTION → BEHAVIOR ENGINE ───",
+    "Emotion is NOT a label. Emotion is HOW the artist physically performs",
+    "the lines. The CORE EMOTION word from each section's tag MUST shape",
+    "line length, repetition, phrasing, and delivery:",
+    "  Pain      → slower lines · repetition · broken / pause-heavy phrasing",
+    "  Joy       → bouncy lines · chant rhythm · call-and-response",
+    "  Struggle  → storytelling lines · tension build · weighted pacing",
+    "  Victory   → confident · declarative · short punch lines",
+    "  Prayer    → spaced lines · spiritual adlibs · breath in gaps",
+    "  Pressure  → compressed lines · escalating density · clipped phrasing",
+    "  Release   → opened phrasing · longer breath · resolved cadence",
+    "  Anger     → punchy · short bursts · hard consonants · direct",
+    "  Longing   → drawn vowels · pause-heavy · ache-tinted phrasing",
+    "If the lines do not BEHAVE like the section's CORE EMOTION → rewrite.",
+    "",
+    "─── SECTION EMOTIONAL ROLE MAP ───",
+    "Each section has a NON-NEGOTIABLE emotional job in the storytelling arc:",
+    "  INTRO  → FEELING       (set the emotional climate, not the plot)",
+    "  VERSE1 → EXPERIENCE    (live the situation in detail / first-person reality)",
+    "  HOOK   → STATEMENT     (the one thing the song is saying — anchored to keeperLine)",
+    "  VERSE2 → ESCALATION    (raise the stakes, change angle, or deepen pressure)",
+    "  BRIDGE → SHIFT         (emotional pivot — confession, prayer, breakdown, truth)",
+    "  OUTRO  → RESOLUTION    (closure / fade / triumph / unresolved ache — match arc)",
+    "Sections that fail their role (e.g. verse1 explains instead of experiencing,",
+    "or hook describes instead of stating) → REWRITE that section internally.",
+    "",
+    "─── HOOK IDENTITY (PICK ONE — NO HYBRIDS) ───",
+    "The hook MUST commit to ONE identity. No hybrids. No drift. Options:",
+    "  • Chant            — repeated punch phrase, chantable, crowd-friendly",
+    "  • Melody           — vowel-flowing, lifted phrasing, sung not shouted",
+    "  • Call-and-Response — leader line + (crowd response) on the next line",
+    "  • Minimal Mantra   — 3–5 word repeated anchor (Asake-style mantra)",
+    `SUGGESTED HOOK IDENTITY for this song: **${hookHint.primary}**  (${hookHint.why}).`,
+    "AUTO-CHANT TRIGGER: if energy is high AND tone is street AND the keeperLine",
+    "is repetition-friendly (≤6 words, hard syllables) → Hook MUST be Chant",
+    "with a (crowd response) line woven in.",
+    "If the hook reads like an ordinary verse line → REWRITE the hook.",
+    "",
+    "─── ADLIB EMOTION × CULTURE MATRIX ───",
+    "Adlibs are EMOTION + CULTURE + SECTION ROLE — never random 'eh / yeah'.",
+    "Pull from this matrix, biased by the section's CORE EMOTION:",
+    "  Pain      → (ahh)   (why)     (hmm)      (no)",
+    "  Prayer    → (amen)  (jah)     (lord)     (selah)",
+    "  Street    → (oya!)  (gba!)    (who dey!) (run am!)",
+    "  Victory   → (yeah!) (we up!)  (run am!)  (let's go)",
+    "  Joy       → (woo!)  (bounce!) (yeahh)    (let's go)",
+    "  Struggle  → (no lie) (real talk) (truth)  (we tried)",
+    "  Longing   → (oh)    (still)   (wait)     (one more time)",
+    `CULTURE BIAS: ${adlibCulturePalette}`,
+    "RULE: an adlib MUST match the section's CORE EMOTION word. An adlib that",
+    "does not match the emotion (e.g. (yeah!) inside a Pain verse) → STRIP IT.",
+    "Cap: at most 1 adlib per 2 lines in any section (no spam).",
+    "",
+    "─── HARD FAIL CONDITIONS (REJECT INTERNALLY → REGENERATE THAT SECTION) ───",
+    "  ✗ Two adjacent sections share the same CORE EMOTION word (V10 plateau)",
+    "  ✗ Verse line count ≠ 8 / 12 / 16  (and section is not chant-flexible / non-English)",
+    "  ✗ Hook has no committed identity (drifts between chant/melody/call-response)",
+    "  ✗ Adlibs feel random or repeat the same style across every section",
+    "  ✗ Lines read TRANSLATED in non-English mode (English-brain phrasing — V11)",
+    "  ✗ Section behavior contradicts its CORE EMOTION (e.g. Joy verse with broken pause-heavy lines)",
+    "  ✗ Section role is missed (verse1 doesn't EXPERIENCE, hook doesn't STATE, etc.)",
+    "  ✗ Blueprint emotion_map / flow_map / hook_style is overridden by 'creativity'",
+    "If ANY condition fires → regenerate ONLY that section, then re-validate.",
+    "═══════════════════════════════════════════════════════════════════════",
+    "",
+  ];
+}
+
 function getDialectBlock(effectiveFlavor: string, dialectStyle?: string): string[] {
   const flavor = effectiveFlavor.toLowerCase();
 
@@ -1863,6 +2267,8 @@ function buildUserPrompt(
     // nice-to-have hint.
     ...buildUserCreativeDirectionBlock(notes),
     ...languageFlavorInstruction,
+    // V11 — CULTURAL VOICE ENGINE (per-language thinking mode + dialect×emotion law).
+    ...getCulturalVoiceEngineBlock(effectiveFlavor),
     ...getCommercialModeBlock(params.commercialMode),
     ...getHookEngineBlock(params.hookRepeat ?? "Medium"),
     ...getVerseVariationBlock(),
@@ -2751,26 +3157,72 @@ function buildBlueprintPrompt(params: {
 // tag per section. Strict authority: Stage 3 (Qwen) MUST honor these tags.
 // Rules: no flat repetition, must evolve, must reflect the artist's style.
 
-const EMOTION_TAG_SYSTEM_PROMPT = `AFROMUSE EMOTION TAG ENGINE — STAGE 2
+const EMOTION_TAG_SYSTEM_PROMPT = `AFROMUSE EMOTION DRIFT ENGINE — STAGE 2 (V10 ARC-BASED)
 
 You are the EMOTION AUTHORITY for an AfroMuse song. You do NOT write lyrics.
 You do NOT decide structure. You ONLY assign one emotion tag per section.
 
-RULES:
-- One tag per section: intro, verse1, hook, verse2, bridge, outro.
-- Each tag is SHORT and BEHAVIORAL — e.g. "Pain Chant (Street Choir)",
-  "Confident Global Swagger", "Quiet Pain Float", "Prayer Chant Wave",
-  "Crowd-Ready Confident Roll", "Layered Pain Groove".
-- NEVER use flat words like "happy" / "sad" / "energetic" / "reflective".
-- NEVER repeat the SAME tag verbatim across sections. verse2 MUST differ
-  from verse1. outro MUST differ from intro. If hook returns, the second
-  hook tag must be a different emotional state of the same hook.
-- Emotion MUST EVOLVE across the song:
-    intro  → entry vibe / curiosity / scene-set
-    verse  → build / story / setup
-    hook   → peak emotional climax
-    bridge → shift / breakdown / reflection
-    outro  → resolution or fade
+🧠 V10 CORE IDEA — EMOTION IS A PATH, NOT A LABEL.
+Emotion is no longer assigned per-section in isolation. It is a TRAJECTORY.
+Each section emotion MUST EVOLVE from the previous one along the assigned
+EMOTION ARC. Static labels like "Energetic" / "Anthemic" applied to multiple
+sections are DEAD ON ARRIVAL.
+
+═══ COMPOSITE TAG FORMAT (V10 — MANDATORY) ═══
+Every tag MUST be built from THREE parts:
+    [ CORE EMOTION ] + [ ENERGY STATE ] + [ CONTEXT FLAVOR ]
+Examples (good — note the 3-part shape):
+    "Pain + Rising + Street Reflection"   → "Rising Street Pain Reflection"
+    "Joy + Explosive + Celebration Wave"  → "Explosive Joy Celebration Wave"
+    "Prayer + Soft + Spiritual Drift"     → "Soft Prayer Spiritual Drift"
+    "Anger + Controlled + Resistance Pulse" → "Controlled Anger Resistance Pulse"
+You MAY collapse the "+" into a natural phrase (e.g. "Soft Prayer Spiritual
+Drift") but ALL THREE PARTS must be present in every tag. NEVER ship a
+single-word or two-word tag.
+
+🚫 BANNED GENERIC TAGS (FAIL-ON-SIGHT — NEVER GENERATE):
+These are LAZY FALLBACKS. If you produce ANY of them, regenerate that tag
+with a 3-part composite tied to the storyline and the arc step:
+  - "Anthemic" / "Anthemic Energy"
+  - "Energetic" / "High Energy"
+  - "Calm Resolution"
+  - "Emotional Peak"
+  - "Confident & Rhythmic"
+  - "Smooth & Seductive" / "Smooth & Melodic"
+  - "Catchy Hook Energy"
+  - "Generic Pain"
+  - "Reflective" / "Uplifting" (alone — fine only as mood INPUT)
+
+═══ GLOBAL VARIATION RULE (HARD) ═══
+- No two sections may share the same emotional tag VERBATIM.
+- No two ADJACENT sections may share the same CORE EMOTION word.
+  ❌ intro="Pain Chant Float", verse1="Pain Chant Build" → BANNED (both "Pain")
+  ✔ intro="Quiet Pain Float", verse1="Pressure Build Roll" → OK (different CORE)
+- Every tag must be UNIQUE across intro / verse1 / hook / verse2 / bridge / outro.
+- verse2 MUST differ from verse1. outro MUST differ from intro.
+- If hook returns later, treat it as a different emotional state of the same hook.
+
+═══ EMOTION DRIFT RULE (V10 — CORE ENGINE) ═══
+EMOTION(n) = EVOLVE(EMOTION(n-1), STORY_CONTEXT)
+- Verse 1 influences Chorus.
+- Chorus influences Verse 2.
+- Verse 2 influences Bridge.
+- Bridge resolves into Outro.
+- Each tag must FEEL like a CONSEQUENCE of the previous one — never a reset,
+  never a copy. Even if intensity is similar, the LABEL must evolve.
+- You MAY jump intensity (Calm → Pain → Rage) when the lyrics demand it,
+  but the jump must follow the assigned EMOTION ARC — no random jumps.
+
+═══ EMOTION ARC ARCHETYPE (provided in user prompt) ═══
+The user prompt will declare an ARC ARCHETYPE for this song — one of:
+    1. STRUGGLE → PRESSURE → BREAK → RELEASE        (street / pain / survival)
+    2. CALM → HUSTLE → WIN → CELEBRATION             (success / uplifting)
+    3. LOVE → DOUBT → LOSS → ACCEPTANCE              (romantic / emotional)
+    4. CHAOS → CONFUSION → ANGER → DEFIANCE          (protest / aggression)
+The user prompt will also map each section to its ARC STEP. You MUST
+produce a tag whose CORE EMOTION matches that arc step. Do not invent a
+different arc — adapt your CORE word to the assigned step.
+
 - Tag MUST reflect the artist reference style when one is given:
     Asake-type     → chant / call-response / street wave logic
     Burna-type     → layered / global / reflective swagger
@@ -2818,6 +3270,126 @@ const SPICE_VERBS = [
   "swell", "bloom", "rupture", "linger", "crackle", "shimmer",
 ];
 
+// ─── V10 EMOTION ARC ARCHETYPES ─────────────────────────────────────────
+// Each arc maps the 6 sections to a CORE EMOTION step. Stage 2 must produce
+// composite tags whose CORE word matches the arc step for that section.
+type ArcArchetype = {
+  id: "struggle" | "uplift" | "romantic" | "protest";
+  name: string;
+  curve: string; // human-readable curve label
+  sectionSteps: Record<SectionKey, string>; // CORE EMOTION per section
+  exampleTags: Record<SectionKey, string>;  // illustrative composite tags
+};
+const ARC_ARCHETYPES: Record<ArcArchetype["id"], ArcArchetype> = {
+  struggle: {
+    id: "struggle",
+    name: "STRUGGLE → PRESSURE → BREAK → RELEASE",
+    curve: "street / pain / survival",
+    sectionSteps: {
+      intro:  "Quiet Pain",
+      verse1: "Pressure Build",
+      hook:   "Break Climax",
+      verse2: "Defiant Drive",
+      bridge: "Reflective Crack",
+      outro:  "Release Exhale",
+    },
+    exampleTags: {
+      intro:  "Hollow Quiet Pain Drift",
+      verse1: "Rising Pressure Street Build",
+      hook:   "Explosive Break Crowd Climax",
+      verse2: "Controlled Defiance Survival Drive",
+      bridge: "Cracked Mirror Reflection Pause",
+      outro:  "Soft Release Open-Sky Exhale",
+    },
+  },
+  uplift: {
+    id: "uplift",
+    name: "CALM → HUSTLE → WIN → CELEBRATION",
+    curve: "success / uplifting",
+    sectionSteps: {
+      intro:  "Calm Anticipation",
+      verse1: "Hustle Build",
+      hook:   "Win Surge",
+      verse2: "Confident Expansion",
+      bridge: "Reflective Gratitude",
+      outro:  "Celebration Glow",
+    },
+    exampleTags: {
+      intro:  "Soft Calm Anticipation Drift",
+      verse1: "Rising Hustle Street Build",
+      hook:   "Explosive Win Crowd Surge",
+      verse2: "Controlled Confidence Expansion Wave",
+      bridge: "Quiet Gratitude Reflection Pulse",
+      outro:  "Glowing Celebration Open-Sky Fade",
+    },
+  },
+  romantic: {
+    id: "romantic",
+    name: "LOVE → DOUBT → LOSS → ACCEPTANCE",
+    curve: "romantic / emotional",
+    sectionSteps: {
+      intro:  "Soft Love",
+      verse1: "Tender Doubt",
+      hook:   "Aching Loss",
+      verse2: "Bittersweet Memory",
+      bridge: "Quiet Surrender",
+      outro:  "Peaceful Acceptance",
+    },
+    exampleTags: {
+      intro:  "Soft Love Candle-Lit Drift",
+      verse1: "Rising Doubt Whispered Build",
+      hook:   "Aching Loss Crowd Cry",
+      verse2: "Bittersweet Memory Slow-Bleed Roll",
+      bridge: "Quiet Surrender Mirror Pause",
+      outro:  "Peaceful Acceptance Letting-Go Fade",
+    },
+  },
+  protest: {
+    id: "protest",
+    name: "CHAOS → CONFUSION → ANGER → DEFIANCE",
+    curve: "protest / street aggression",
+    sectionSteps: {
+      intro:  "Restless Chaos",
+      verse1: "Confused Pressure",
+      hook:   "Burning Anger",
+      verse2: "Sharp Resistance",
+      bridge: "Cold Resolve",
+      outro:  "Defiant Stand",
+    },
+    exampleTags: {
+      intro:  "Restless Chaos Street Drift",
+      verse1: "Rising Confusion Pressure Build",
+      hook:   "Burning Anger Crowd Climax",
+      verse2: "Sharp Resistance Counter-Punch Drive",
+      bridge: "Cold Resolve Mirror Pause",
+      outro:  "Defiant Stand Open-Sky Roar",
+    },
+  },
+};
+
+function selectArcArchetype(params: {
+  topic: string;
+  genre: string;
+  mood: string;
+  notes?: string;
+}): ArcArchetype {
+  const blob = `${params.topic} ${params.genre} ${params.mood} ${params.notes ?? ""}`.toLowerCase();
+  // Romantic first — "love" + "loss" both clearly anchor here.
+  if (/\b(love|romance|romantic|heartbreak|heart-?broken|breakup|crush|lover|relationship|missing you|forever|wedding)\b/.test(blob)) {
+    return ARC_ARCHETYPES.romantic;
+  }
+  // Protest / aggression
+  if (/\b(protest|riot|rage|fight|war|injustice|government|system|revolt|defian|resist|streets are|no peace|brutality)\b/.test(blob)) {
+    return ARC_ARCHETYPES.protest;
+  }
+  // Uplift / success — celebration, win, gratitude, prayer-of-thanks
+  if (/\b(success|win|winning|victory|celebrat|grateful|gratitude|bless|blessing|come up|made it|hustle paid|prosper|elevation|abundance|thanksgiving)\b/.test(blob)) {
+    return ARC_ARCHETYPES.uplift;
+  }
+  // Default: struggle (covers pain, street, survival, grind, prayer-in-pain)
+  return ARC_ARCHETYPES.struggle;
+}
+
 function buildEmotionTagPrompt(params: {
   topic: string;
   genre: string;
@@ -2827,8 +3399,9 @@ function buildEmotionTagPrompt(params: {
   languageFlavor: string;
   notes?: string;
   structureBlueprint: CreativeBlueprint;
+  arcArchetype: ArcArchetype;
 }): string {
-  const { topic, genre, mood, artistInspiration, styleReference, languageFlavor, notes, structureBlueprint } = params;
+  const { topic, genre, mood, artistInspiration, styleReference, languageFlavor, notes, structureBlueprint, arcArchetype } = params;
   const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ")
     || "no specific artist — use balanced AfroMuse default lane";
 
@@ -2843,12 +3416,29 @@ function buildEmotionTagPrompt(params: {
     nonce:   Math.random().toString(36).slice(2, 10),
   };
 
+  // V10 — render the assigned arc + per-section CORE EMOTION steps.
+  const arcLines = [
+    `ARC ARCHETYPE = ${arcArchetype.name}    (${arcArchetype.curve})`,
+    `EMOTION CURVE — your CORE EMOTION word for each section MUST match:`,
+    `  intro  → CORE = "${arcArchetype.sectionSteps.intro}"   (e.g. "${arcArchetype.exampleTags.intro}")`,
+    `  verse1 → CORE = "${arcArchetype.sectionSteps.verse1}"  (e.g. "${arcArchetype.exampleTags.verse1}")`,
+    `  hook   → CORE = "${arcArchetype.sectionSteps.hook}"    (e.g. "${arcArchetype.exampleTags.hook}")`,
+    `  verse2 → CORE = "${arcArchetype.sectionSteps.verse2}"  (e.g. "${arcArchetype.exampleTags.verse2}")`,
+    `  bridge → CORE = "${arcArchetype.sectionSteps.bridge}"  (e.g. "${arcArchetype.exampleTags.bridge}")`,
+    `  outro  → CORE = "${arcArchetype.sectionSteps.outro}"   (e.g. "${arcArchetype.exampleTags.outro}")`,
+    `Each tag MUST be a 3-PART COMPOSITE [CORE EMOTION] + [ENERGY STATE] + [CONTEXT FLAVOR].`,
+    `The example tags above are illustrative — DO NOT echo them verbatim. Invent fresh phrasing that fits THIS song's storyline.`,
+  ].join("\n");
+
   return [
     "INPUT:",
     `idea = ${topic}`,
     `genre = ${genre} | mood = ${mood} | language = ${languageFlavor}`,
     `artist reference = ${artistLine}`,
     ...(notes?.trim() ? ["", "USER DIRECTION (must influence emotion choices):", notes.trim()] : []),
+    "",
+    "═══ V10 EMOTION ARC ASSIGNMENT (LAW — MUST FOLLOW) ═══",
+    arcLines,
     "",
     "CREATIVE SPICE (use as a freshness anchor — DO NOT echo verbatim):",
     `  lane    = ${spice.lane}`,
@@ -2859,9 +3449,13 @@ function buildEmotionTagPrompt(params: {
     "STRUCTURE BLUEPRINT (read for context — do not modify):",
     JSON.stringify(structureBlueprint),
     "",
-    "TASK: assign one EVOLVING emotion tag per section. JSON only.",
-    "Each tag must FEEL different from your last generation — the spice",
-    "above is your randomness seed. Lean into it.",
+    "TASK: assign one EVOLVING 3-PART COMPOSITE emotion tag per section.",
+    "Each tag must:",
+    "  1. Match the CORE EMOTION assigned for that section in the EMOTION CURVE above.",
+    "  2. Be a 3-PART composite: CORE + ENERGY + CONTEXT.",
+    "  3. EVOLVE from the previous section's tag — different CORE word from neighbors.",
+    "  4. Be unique across all six sections.",
+    "JSON only.",
   ].join("\n");
 }
 
@@ -3198,13 +3792,89 @@ function buildDirectorPrompt(params: {
 // blueprint (priority stack, emotion behaviors, flow types, hook gate,
 // adlib palettes, artist adaptation, progression) is NOT restated here.
 // Hard target: ≤ 1.5 K chars (~400 tokens).
-const LYRICS_COMPRESSED_SYSTEM_PROMPT = `AFROMUSE LYRICS WRITER — STAGE 3 (LIGHT)
+const LYRICS_COMPRESSED_SYSTEM_PROMPT = `AFROMUSE LYRICS EXECUTION ENGINE — STAGE 3 (V9 STRICT EXECUTION MODE)
 
-The blueprint already decided the SHAPE. WRITE lyrics that fit it.
+🧠 CORE IDENTITY (LOCKED — DO NOT DRIFT)
+You are NOT a creative writer. You are NOT a songwriter.
+You are a STRUCTURE EXECUTION ENGINE.
+Your only job: convert the blueprint into structured lyrics with ZERO deviation.
+You do NOT improvise structure. You do NOT merge emotions.
+You do NOT add extra lines. You do NOT reinterpret tags.
+You only EXECUTE. If you deviate → rewrite the section internally before output.
+
+═══ BLUEPRINT DOMINANCE RULE (LAW — NOT A SUGGESTION) ═══
+The blueprint is the SOURCE OF TRUTH. You MUST follow:
+- emotion_map per section (exact tag, exact behavior)
+- flow_map per section (chant / smooth / broken / percussive)
+- hook_style, adlib_style, artist_behavior — EXACTLY
+- keeperLine — preserved VERBATIM, anchored in hook + outro
+Blueprint OVERRIDES creativity 100%. If blueprint says
+  verse = "Pain Chant Street Choir"
+you MUST NOT change it to "Anthemic" / "Energetic" / anything else.
+Do NOT reinterpret. Do NOT override. Do NOT simplify. Do NOT "improve" it.
+
+═══ LINE COUNT RULE (ABSOLUTE — V9) ═══
+Each section MUST land in this allowed window:
+  INTRO  → 2 lines (4 only when SECTION LINE TARGETS allows it)
+  HOOK   → 4, 6, or 8 lines ONLY
+  VERSE  → 8, 12, or 16 lines ONLY
+  BRIDGE → 4 lines ONLY
+  OUTRO  → 2 or 4 lines ONLY
+SECTION LINE TARGETS (below) is the FINAL authority and always wins.
+If your draft violates either: regenerate THAT SECTION internally before output.
+Do NOT approximate. Do NOT exceed. Do NOT go under.
+
+═══ EMOTION TAG RULE (ANTI-REPEAT, BEHAVIOR-BOUND) ═══
+Each section carries ONE primary emotion tag (+ ONE optional secondary
+ONLY if blueprint demands contrast). The tag is BEHAVIOR — it dictates
+word choice, rhythm, and delivery:
+  - "Pain Chant"     → short lines, repetition, vocal strain, simple words
+  - "Street Hype"    → punchy, loud, chantable, crowd adlibs
+  - "Prayer Wave"    → spiritual tone, spaced delivery, breath in gaps
+  - "Broken Echo"    → fragmented, pause-heavy, sense memory
+  - "Confident Roll" → punchy phrasing, call & response, less repetition
+ROTATION LAW (no two sections may share a tag unless blueprint demands):
+  INTRO  → mood-set    (Reflective / Calm / Mysterious / Curious)
+  VERSE  → narrative   (Pain / Struggle / Hustle / Confession)
+  CHORUS → peak        (Anthemic Climax / Emotional Peak / Release)
+  BRIDGE → contrast    (Prayer / Breakdown / Hope Shift)
+  OUTRO  → resolution  (Calm / Closure / Triumph / Fade)
+If lyrics do not match the assigned emotion: REWRITE that section.
+
+═══ DYNAMIC STYLE SELECTION RULE (NO TEMPLATE COPYING) ═══
+Emotion + delivery MUST be derived from THIS song's:
+  story context · lyrical theme · section role · energy curve position
+A "struggle verse" is NOT an "energetic verse".
+A "prayer bridge" is NOT a "hype bridge".
+Do NOT reuse a generic emotion template across runs.
+
+═══ ADLIB INTELLIGENCE RULE (CONTEXT-BOUND, NON-REPETITIVE) ═══
+Adlibs MUST be context-based, emotionally aligned, and varied across sections.
+Allowed types: call & response (crowd), chant bursts, prayer interjections,
+street hype markers. Forbidden: repeating the SAME adlib style every section
+(no "Oya / Eh / Amen" sprinkled everywhere). Pull from blueprint adlib_style.
+
+═══ FILLER CONTROL (NO LAZY CRUTCHES) ═══
+Do NOT overuse "eh", "mmm", "oh Lord", "yeah", "woah", "ahh".
+Use ONLY when the section's emotion explicitly requires it.
+HARD CAP: at most 1 filler line per 4 lines in any section.
+
+═══ STRUCTURE ENFORCEMENT (SELF-VALIDATE BEFORE RETURN) ═══
+Before you emit JSON, internally verify EVERY one of these:
+  ✔ correct line count per section (matches SECTION LINE TARGETS)
+  ✔ emotion diversity achieved (no repeated tag blocks)
+  ✔ hook appears exactly as specified, anchored to keeperLine
+  ✔ keeperLine preserved VERBATIM
+  ✔ adlibs vary across sections, no template repetition
+If ANY check fails → regenerate ONLY that section, then re-validate.
+
+═══ QUALITY OVERRIDE RULE ═══
+If your draft feels repetitive / emotionally flat / tag-stuck:
+  - reassign emotion per affected section
+  - regenerate section TONE
+  - PRESERVE structure and keeperLine, change wording only.
 
 RULES:
-- Honor blueprint emotion_map per section (length, repetition, vocab).
-- Honor blueprint flow_map per section (chant/smooth/broken/percussive).
 - Hook: simple, chantable, repeatable. Anchor with keeperLine. Reuse keeperLine in outro.
 - Adlibs: pull from blueprint adlib_style palette. End of phrases or hook climax.
 - Chant flow → leader line, then (crowd response) on the next line.
@@ -3249,8 +3919,11 @@ function buildCompressedLyricsPrompt(params: {
   diversityProfile: DiversityProfile;
   blueprint: CreativeBlueprint;
   directorBrief?: DirectorBrief | null;
+  // V12 — arc archetype carried in so the master core block can auto-suggest
+  // hook identity (Chant / Melody / Call-Response / Minimal Mantra).
+  arcArchetype?: ArcArchetype | null;
 }): string {
-  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint, directorBrief } = params;
+  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint, directorBrief, arcArchetype } = params;
   const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ");
   const sectionTargets = (Object.keys(diversityProfile.sectionLineTargets) as SectionKey[])
     .map((k) => `  ${k}: ${diversityProfile.sectionLineTargets[k]?.join(" or ")}`)
@@ -3299,7 +3972,15 @@ function buildCompressedLyricsPrompt(params: {
     `genre = ${genre} | mood = ${mood} | language = ${languageFlavor}`,
     ...(artistLine ? [`artist reference = ${artistLine}`] : []),
     ...(notes?.trim() ? ["", "USER DIRECTION (write to THIS idea):", notes.trim()] : []),
-    "",
+    // V12 — MASTER INTELLIGENCE CORE. Unifies emotion→behavior, section
+    // emotional roles, hook identity (chant/melody/call-response/mantra
+    // with auto-trigger from arc archetype), adlib emotion×culture matrix,
+    // and HARD FAIL conditions. Always emitted (English + non-English).
+    ...getMasterIntelligenceCoreV12Block(arcArchetype, languageFlavor),
+    // V11 — CULTURAL VOICE ENGINE. Activates only for non-English flavors.
+    // Forces native-cultural thinking (no translate-from-English), binds
+    // dialect to emotion, and loosens structure per language's natural rhythm.
+    ...getCulturalVoiceEngineBlock(languageFlavor),
     ...directorBlock,
     "BLUEPRINT (honor exactly):",
     blueprintCompact,
@@ -3368,6 +4049,29 @@ function lightValidate(
   // Honor the model's own self-audit
   if (trace?.failureChecks?.weakHook) issues.push("hook: model self-audit flagged weak hook");
   if (trace?.failureChecks?.chantMissing) issues.push("artist alignment: model self-audit flagged chant missing");
+
+  // FIX 6 — filler-ratio cap. Lyrics that lean on "eh" / "mmm" / "oh Lord"
+  // / "yeah" / "woah" / "ahh" as standalone lines are a lazy crutch.
+  // HARD CAP: at most 1 filler line per 4 lines per section.
+  const FILLER_PATTERN = /^\s*\(?\s*(?:eh+|mm+|oh\s*lord|yeah+|woah+|ah+|uh+|ohh+|hmm+)[\s!.,)]*$/i;
+  for (const k of ["intro", "verse1", "hook", "verse2", "bridge", "outro"] as SectionKey[]) {
+    const arr = draft[k];
+    if (!Array.isArray(arr) || arr.length === 0) continue;
+    let fillerCount = 0;
+    let totalCount = 0;
+    for (const line of arr) {
+      if (typeof line !== "string") continue;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      totalCount += 1;
+      if (FILLER_PATTERN.test(trimmed)) fillerCount += 1;
+    }
+    if (totalCount === 0) continue;
+    const cap = Math.max(1, Math.floor(totalCount / 4));
+    if (fillerCount > cap) {
+      issues.push(`filler: ${k} has ${fillerCount} filler lines (cap ${cap} for ${totalCount} lines)`);
+    }
+  }
 
   return { pass: issues.length === 0, issues };
 }
@@ -3689,6 +4393,20 @@ router.post("/generate-song", async (req, res) => {
     // Strict authority on emotion direction. Tiny + cool model.
     // Falls back to a deterministic emotion map derived from mood/genre
     // if the model is unavailable (so generation never hard-blocks here).
+    // V10 — pick a song-wide EMOTION ARC ARCHETYPE up front. The same arc
+    // is reused for both the prompt to LLaMA and the programmatic
+    // anti-plateau / drift checks below.
+    const arcArchetype = selectArcArchetype({
+      topic,
+      genre: selectedGenre,
+      mood: selectedMood,
+      notes,
+    });
+    logger.info(
+      { arc: arcArchetype.id, name: arcArchetype.name, curve: arcArchetype.curve },
+      "MSGP Stage 2 (V10): emotion arc archetype selected",
+    );
+
     const callEmotionEngine = async (sb: CreativeBlueprint): Promise<EmotionTagMap | null> => {
       try {
         const userPrompt = buildEmotionTagPrompt({
@@ -3700,6 +4418,7 @@ router.post("/generate-song", async (req, res) => {
           languageFlavor: effectiveFlavor,
           notes,
           structureBlueprint: sb,
+          arcArchetype,
         });
         const response = await ai.chat.completions.create({
           model: LLAMA_EMOTION_MODEL.id,
@@ -3747,6 +4466,114 @@ router.post("/generate-song", async (req, res) => {
           }
           seen.add((out[k] ?? "").toLowerCase());
         }
+
+        // FIX 3 — banned-tag enforcer. Even with the prompt rule, LLaMA 3.2
+        // sometimes still emits "Anthemic" / "High Energy" / "Smooth & Melodic"
+        // as a lazy fallback. We catch those verbatim and rewrite them with a
+        // section-flavored, storyline-rooted replacement so downstream Qwen
+        // never sees a banned tag.
+        const BANNED_TAGS = [
+          "anthemic", "anthemic energy",
+          "energetic", "high energy",
+          "calm resolution",
+          "emotional peak",
+          "confident & rhythmic", "confident and rhythmic",
+          "smooth & seductive", "smooth and seductive",
+          "smooth & melodic", "smooth and melodic",
+          "catchy hook energy",
+          "generic pain",
+          "reflective", "uplifting",
+        ];
+        const REPLACEMENT_BY_SECTION: Record<SectionKey, string> = {
+          intro:  "Curious Story Entry",
+          verse1: "Pressure Build Roll",
+          hook:   "Crowd-Ready Climax Wave",
+          verse2: "Counter-Punch Drive",
+          bridge: "Mirror-Stare Pause",
+          outro:  "Open-Sky Resolution",
+        };
+        for (const k of ["intro", "verse1", "hook", "verse2", "bridge", "outro"] as SectionKey[]) {
+          const tag = out[k];
+          if (!tag) continue;
+          if (BANNED_TAGS.includes(tag.toLowerCase().trim())) {
+            const before = tag;
+            out[k] = REPLACEMENT_BY_SECTION[k];
+            logger.warn({ section: k, before, after: out[k] }, "MSGP Stage 2: banned generic emotion tag replaced");
+          }
+        }
+
+        // V10 — ANTI-PLATEAU CHECK + ARC ENFORCEMENT.
+        // Detect adjacent sections that share the same CORE EMOTION word
+        // (e.g. "Pain Chant Float" + "Pain Chant Build" both starting "Pain"),
+        // and rebuild the offender from the arc archetype's CORE step.
+        // Also: ensure every tag has at least 3 words (composite shape).
+        const coreWord = (tag: string): string => {
+          const tokens = tag
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+            .split(/\s+/)
+            .filter(Boolean);
+          // Skip leading energy adjectives ("rising", "soft", "explosive", ...)
+          // so we can compare the actual CORE EMOTION word, not the energy state.
+          const ENERGY_ADJ = new Set([
+            "rising","soft","explosive","controlled","quiet","loud","slow","fast",
+            "gentle","heavy","light","sharp","dull","bright","dark","cold","warm",
+            "hollow","layered","cracked","smooth","raw","calm","wild","tender",
+            "burning","glowing","steady","trembling","rapid","slowed","muted",
+          ]);
+          for (const t of tokens) {
+            if (!ENERGY_ADJ.has(t)) return t;
+          }
+          return tokens[0] ?? "";
+        };
+        const sectionList: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+        // Pass 1 — composite-shape check (must be 3+ words).
+        for (const k of sectionList) {
+          const tag = out[k];
+          if (!tag) continue;
+          const wordCount = tag.trim().split(/\s+/).filter(Boolean).length;
+          if (wordCount < 3) {
+            const before = tag;
+            out[k] = arcArchetype.exampleTags[k];
+            logger.warn(
+              { section: k, before, after: out[k], wordCount },
+              "MSGP Stage 2 V10: tag missing composite shape (need 3+ words) — replaced from arc archetype",
+            );
+          }
+        }
+        // Pass 2 — adjacent CORE-EMOTION plateau check.
+        for (let i = 1; i < sectionList.length; i++) {
+          const prev = sectionList[i - 1]!;
+          const curr = sectionList[i]!;
+          const prevTag = out[prev];
+          const currTag = out[curr];
+          if (!prevTag || !currTag) continue;
+          if (coreWord(prevTag) && coreWord(prevTag) === coreWord(currTag)) {
+            const before = currTag;
+            // Rebuild the current section from the arc archetype's example tag
+            // — the arc guarantees a different CORE EMOTION word vs. the prior step.
+            out[curr] = arcArchetype.exampleTags[curr];
+            logger.warn(
+              { section: curr, prev, before, after: out[curr], plateauCore: coreWord(prevTag) },
+              "MSGP Stage 2 V10: anti-plateau — adjacent sections shared CORE emotion, replaced from arc archetype",
+            );
+          }
+        }
+        // Pass 3 — final dedup (the arc-archetype rewrites in passes 1+2 might
+        // collide with another section's existing tag; nudge with a section suffix).
+        const seenFinal = new Set<string>();
+        for (const k of sectionList) {
+          const tag = out[k];
+          if (!tag) continue;
+          const norm = tag.toLowerCase();
+          if (seenFinal.has(norm)) {
+            const before = tag;
+            out[k] = `${tag} ${SUFFIX_BY_SECTION[k]}`;
+            logger.info({ section: k, before, after: out[k] }, "MSGP Stage 2 V10: dedup'd post-arc-rewrite collision");
+          }
+          seenFinal.add((out[k] ?? "").toLowerCase());
+        }
+
         return out;
       } catch (err) {
         logger.warn({ model: LLAMA_EMOTION_MODEL.name, err }, "MSGP Stage 2 (emotion engine) failed");
@@ -3969,6 +4796,10 @@ router.post("/generate-song", async (req, res) => {
           diversityProfile,
           blueprint,
           directorBrief,
+          // V12 — pass arc archetype so the master core block can auto-suggest
+          // hook identity (Chant for struggle/protest/street, Melody for
+          // romantic, Call-and-Response for uplift, Mantra otherwise).
+          arcArchetype,
         })
       : buildUserPrompt(promptParams, false);
 
@@ -4146,53 +4977,57 @@ router.post("/generate-song", async (req, res) => {
       logger.info({ elapsedMs: Date.now() - stage5Start }, "MSGP Stage 5 complete");
     }
 
-    // ─── STAGE 5.5 — STRUCTURE ENFORCEMENT LAYER (verse line counts) ────────
-    // ENFORCEMENT MODE: verses MUST have EXACTLY 8, 12, or 16 lines.
-    // For any verse that violates, run ONE Qwen pass with strict rules:
+    // ─── STAGE 5.5 — STRUCTURE ENFORCEMENT LAYER (V9 ALL-SECTION COUNTS) ────
+    // ENFORCEMENT MODE: every section MUST land in its allowed count window
+    // (sectionLineTargets, derived from the chosen arrangement profile).
+    // For any section that violates, run ONE Qwen pass with strict rules:
     //   - if too long → trim the weakest / redundant lines
     //   - if too short → expand using same tone, cadence, theme
     //   - NEVER change meaning, story, or emotional tone
-    // The hook (chorus) is NOT touched here — chorus consistency across
-    // repetitions is enforced at the music-engine repeat layer.
-    // Acceptance gate is STRICT: each fixed verse must have EXACTLY the
-    // target line count. On any failure we ship the existing draft as-is
-    // (the lyrics already exist; structure deviation beats no song).
+    // The hook (chorus) IS now policed too (V9). For the hook we still
+    // preserve the keeperLine verbatim — Qwen only adjusts the surrounding
+    // lines. Chorus consistency across repetitions remains enforced at the
+    // music-engine repeat layer.
+    // Acceptance gate is STRICT: each fixed section must have EXACTLY ONE
+    // of its allowed target counts. On any failure we ship the existing
+    // draft as-is (the lyrics already exist; structure deviation beats no song).
     {
       const stage55Start = Date.now();
-      const VERSE_VALID_COUNTS = [8, 12, 16] as const;
-      const nearestValidVerseCount = (n: number): number => {
-        let best = VERSE_VALID_COUNTS[0];
+      const allSections: SectionKey[] = ["intro", "verse1", "hook", "verse2", "bridge", "outro"];
+      const nearestAllowedCount = (n: number, allowed: number[]): number => {
+        let best = allowed[0]!;
         let bestDist = Math.abs(n - best);
-        for (const c of VERSE_VALID_COUNTS) {
+        for (const c of allowed) {
           const d = Math.abs(n - c);
           if (d < bestDist) { bestDist = d; best = c; }
         }
         return best;
       };
-      const verseSections: Array<"verse1" | "verse2"> = ["verse1", "verse2"];
       type StructureViolation = {
-        section: "verse1" | "verse2";
+        section: SectionKey;
         current: number;
         target: number;
+        allowed: number[];
         lines: string[];
       };
       const violations: StructureViolation[] = [];
-      for (const k of verseSections) {
+      for (const k of allSections) {
+        const allowed = diversityProfile.sectionLineTargets[k];
+        if (!Array.isArray(allowed) || allowed.length === 0) continue;
         const arr = finalLyricsDraft[k];
         if (!Array.isArray(arr)) continue;
         const lines = arr.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
         const current = lines.length;
-        const target = nearestValidVerseCount(current);
-        if (current !== target) {
-          violations.push({ section: k, current, target, lines });
-        }
+        if (allowed.includes(current)) continue;
+        const target = nearestAllowedCount(current, allowed);
+        violations.push({ section: k, current, target, allowed, lines });
       }
 
       if (violations.length === 0) {
-        logger.info("MSGP Stage 5.5: all verses already at valid line counts (8/12/16)");
+        logger.info("MSGP Stage 5.5: all sections already at valid line counts (V9 windows)");
       } else {
         logger.info(
-          { violations: violations.map((v) => ({ section: v.section, current: v.current, target: v.target })) },
+          { violations: violations.map((v) => ({ section: v.section, current: v.current, target: v.target, allowed: v.allowed })) },
           "MSGP Stage 5.5: structure violations detected — running enforcement pass",
         );
 
@@ -4208,10 +5043,11 @@ router.post("/generate-song", async (req, res) => {
           "4. NEVER change the meaning, story, or emotional tone of the section.",
           "5. One sentence = one line. Do NOT merge two lines into one. Do NOT split one line into two unnaturally.",
           "6. Preserve the original flow, language, and dialect.",
+          "7. If a KEEPER LINE is provided, it MUST appear VERBATIM in the fixed hook section — never rephrase it.",
           "",
           "OUTPUT FORMAT: STRICT JSON ONLY. No markdown, no fences, no commentary, no <think> blocks.",
-          'Shape: { "verse1"?: string[], "verse2"?: string[] } — include ONLY the sections you were asked to fix.',
-          "Each array MUST have exactly the requested number of non-empty string lines.",
+          'Shape: { "intro"?: string[], "verse1"?: string[], "hook"?: string[], "verse2"?: string[], "bridge"?: string[], "outro"?: string[] }',
+          "Include ONLY the sections you were asked to fix. Each array MUST have exactly the requested number of non-empty string lines.",
         ].join("\n");
 
         const fixSpec = violations
@@ -4221,6 +5057,7 @@ router.post("/generate-song", async (req, res) => {
               `SECTION: ${v.section}`,
               `CURRENT_LINES: ${v.current}`,
               `TARGET_LINES: ${v.target}   ← MUST EXACTLY MATCH`,
+              `ALLOWED_LINE_COUNTS_FOR_THIS_SECTION: [${v.allowed.join(", ")}]`,
               `ACTION: ${action} to reach exactly ${v.target} lines`,
               `LINES:`,
               ...v.lines.map((l, i) => `${i + 1}. ${l}`),
@@ -4228,15 +5065,20 @@ router.post("/generate-song", async (req, res) => {
           })
           .join("\n\n");
 
+        // Hook context for tonal alignment when fixing non-hook sections.
         const hookContextLines = Array.isArray(finalLyricsDraft.hook)
           ? (finalLyricsDraft.hook as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
           : [];
         const hookContext = hookContextLines.length > 0 ? hookContextLines.join(" / ") : "";
+        const fixingHook = violations.some((v) => v.section === "hook");
+        const keeperLineRaw = typeof finalLyricsDraft.keeperLine === "string" ? finalLyricsDraft.keeperLine.trim() : "";
 
         const structureFixUserPrompt = [
-          "Fix the line counts of the following verse(s) to EXACTLY match TARGET_LINES.",
+          "Fix the line counts of the following section(s) to EXACTLY match TARGET_LINES.",
           "Do not change meaning, story, or emotional tone.",
-          hookContext ? `\nHook (for tonal context only — DO NOT modify the hook): "${hookContext}"` : "",
+          fixingHook && keeperLineRaw
+            ? `\nKEEPER LINE (MUST appear VERBATIM in the fixed hook): "${keeperLineRaw}"`
+            : (hookContext ? `\nHook (for tonal context only — DO NOT modify the hook): "${hookContext}"` : ""),
           "",
           fixSpec,
           "",
@@ -4259,12 +5101,12 @@ router.post("/generate-song", async (req, res) => {
           }, { signal: AbortSignal.timeout(60_000) });
 
           const raw = structureResp.choices[0]?.message?.content ?? "";
-          const fixed = parseJson(raw) as Partial<Record<"verse1" | "verse2", unknown>> | null;
+          const fixed = parseJson(raw) as Partial<Record<SectionKey, unknown>> | null;
 
           if (!fixed) {
             logger.warn("MSGP Stage 5.5: structure fix returned no parseable JSON — keeping original draft");
           } else {
-            const accepted: Partial<Record<"verse1" | "verse2", string[]>> = {};
+            const accepted: Partial<Record<SectionKey, string[]>> = {};
             let allValid = true;
             for (const v of violations) {
               const cand = fixed[v.section];
@@ -4284,6 +5126,18 @@ router.post("/generate-song", async (req, res) => {
                 );
                 allValid = false;
                 break;
+              }
+              // Hook fix MUST keep the keeperLine verbatim — otherwise reject.
+              if (v.section === "hook" && keeperLineRaw) {
+                const hookText = cleanLines.join(" ").toLowerCase();
+                if (!hookText.includes(keeperLineRaw.toLowerCase())) {
+                  logger.warn(
+                    { section: v.section, keeper: keeperLineRaw },
+                    "MSGP Stage 5.5: hook fix dropped the keeperLine — rejecting",
+                  );
+                  allValid = false;
+                  break;
+                }
               }
               accepted[v.section] = cleanLines;
             }

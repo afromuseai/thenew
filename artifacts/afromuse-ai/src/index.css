@@ -186,3 +186,53 @@
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }
 }
+
+/* ─── Loading animation keyframes (GPU-composited, smooth) ───────────── */
+@keyframes spin-cw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes spin-ccw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+@keyframes loader-aurora {
+  0%, 100% { transform: scale(1);    opacity: 0.45; }
+  50%      { transform: scale(1.12); opacity: 0.65; }
+}
+@keyframes loader-core-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+@keyframes loader-core-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25%      { transform: rotate(8deg); }
+  75%      { transform: rotate(-8deg); }
+}
+@keyframes loader-shimmer {
+  0%   { transform: translate3d(-100%, 0, 0); }
+  100% { transform: translate3d(200%, 0, 0); }
+}
+
+.loader-gpu {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+.loader-spin-fast    { animation: spin-cw  3.5s linear infinite; }
+.loader-spin-slow    { animation: spin-ccw 8s   linear infinite; }
+.loader-spin-mid     { animation: spin-cw  6s   linear infinite; }
+.loader-orbit-fast   { animation: spin-cw  3.5s linear infinite; }
+.loader-orbit-slow   { animation: spin-ccw 5s   linear infinite; }
+.loader-aurora       { animation: loader-aurora 4s ease-in-out infinite; }
+.loader-core-breathe { animation: loader-core-breathe 2.4s ease-in-out infinite; }
+.loader-core-wiggle  { animation: loader-core-wiggle 3s ease-in-out infinite; }
+.loader-shimmer      { animation: loader-shimmer 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-spin-fast, .loader-spin-slow, .loader-spin-mid,
+  .loader-orbit-fast, .loader-orbit-slow, .loader-aurora,
+  .loader-core-breathe, .loader-core-wiggle, .loader-shimmer {
+    animation: none;
+  }
+}
