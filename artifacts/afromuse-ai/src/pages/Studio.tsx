@@ -1625,23 +1625,132 @@ export default function Studio() {
                   </motion.div>
                 )}
 
-                {/* Generating state */}
+                {/* Generating state — premium orbital animation */}
                 {status === "generating" && (
                   <motion.div
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    className="flex flex-col items-center justify-center py-24 text-center"
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex flex-col items-center justify-center py-28 text-center"
                   >
-                    <div className="relative mb-6">
-                      <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center">
-                        <Loader2 className="w-9 h-9 text-amber-400 animate-spin" />
-                      </div>
+                    <div className="relative w-44 h-44 mb-10">
+                      {/* Outer aurora glow */}
                       <motion.div
-                        animate={{ scale: [1, 1.4], opacity: [0.4, 0] }}
-                        transition={{ duration: 1.2, repeat: Infinity, ease: "easeOut" }}
-                        className="absolute inset-0 rounded-3xl border-2 border-amber-500/30"
+                        animate={{ scale: [1, 1.15, 1], opacity: [0.35, 0.6, 0.35] }}
+                        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.35),rgba(217,70,239,0.15)_45%,transparent_70%)] blur-2xl"
+                      />
+
+                      {/* Conic gradient sweep ring */}
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 3.5, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background: "conic-gradient(from 0deg, transparent 0%, rgba(245,158,11,0.9) 25%, rgba(251,191,36,0.6) 35%, transparent 60%)",
+                          mask: "radial-gradient(circle, transparent 62%, black 63%, black 70%, transparent 71%)",
+                          WebkitMask: "radial-gradient(circle, transparent 62%, black 63%, black 70%, transparent 71%)",
+                        }}
+                      />
+
+                      {/* Counter-rotating dashed ring */}
+                      <motion.div
+                        animate={{ rotate: -360 }}
+                        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-3 rounded-full border border-dashed border-amber-400/25"
+                      />
+
+                      {/* Inner gradient ring */}
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-6 rounded-full"
+                        style={{
+                          background: "conic-gradient(from 180deg, rgba(217,70,239,0.0) 0%, rgba(217,70,239,0.5) 50%, rgba(217,70,239,0.0) 100%)",
+                          mask: "radial-gradient(circle, transparent 75%, black 76%, black 82%, transparent 83%)",
+                          WebkitMask: "radial-gradient(circle, transparent 75%, black 76%, black 82%, transparent 83%)",
+                        }}
+                      />
+
+                      {/* Orbiting dot 1 */}
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 3.5, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-0"
+                      >
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.9)]" />
+                      </motion.div>
+
+                      {/* Orbiting dot 2 (offset, slower, fuchsia) */}
+                      <motion.div
+                        animate={{ rotate: -360 }}
+                        transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-3"
+                      >
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.9)]" />
+                      </motion.div>
+
+                      {/* Center core — breathing gradient orb with Music icon */}
+                      <motion.div
+                        animate={{ scale: [1, 1.05, 1] }}
+                        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-12 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-fuchsia-600 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.6),inset_0_2px_8px_rgba(255,255,255,0.3)]"
+                      >
+                        <motion.div
+                          animate={{ rotate: [0, 8, -8, 0] }}
+                          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                        >
+                          <Music className="w-8 h-8 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]" />
+                        </motion.div>
+                      </motion.div>
+
+                      {/* Inner specular highlight */}
+                      <div className="absolute inset-12 rounded-full bg-gradient-to-br from-white/30 via-transparent to-transparent pointer-events-none" />
+                    </div>
+
+                    {/* Animated step text with smooth crossfade */}
+                    <div className="h-6 mb-3 overflow-hidden">
+                      <AnimatePresence mode="wait">
+                        <motion.p
+                          key={generatingStep}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -12 }}
+                          transition={{ duration: 0.4, ease: "easeOut" }}
+                          className="text-[15px] font-semibold bg-gradient-to-r from-white via-amber-100 to-white bg-clip-text text-transparent tracking-wide"
+                        >
+                          {generatingSteps[generatingStep]}
+                        </motion.p>
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Subtitle */}
+                    <p className="text-xs text-white/35 tracking-[0.18em] uppercase font-medium mb-7">
+                      Crafting your sound
+                    </p>
+
+                    {/* Shimmering progress track */}
+                    <div className="relative w-64 h-[3px] rounded-full bg-white/5 overflow-hidden">
+                      <motion.div
+                        animate={{ x: ["-100%", "100%"] }}
+                        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-amber-400 to-transparent"
                       />
                     </div>
-                    <p className="text-sm font-semibold text-white/60 animate-pulse">{generatingSteps[generatingStep]}</p>
+
+                    {/* Step pip indicators */}
+                    <div className="flex gap-1.5 mt-5">
+                      {generatingSteps.map((_, i) => (
+                        <motion.div
+                          key={i}
+                          animate={{
+                            opacity: i === generatingStep ? 1 : i < generatingStep ? 0.5 : 0.18,
+                            scale: i === generatingStep ? 1.3 : 1,
+                          }}
+                          transition={{ duration: 0.3 }}
+                          className={`w-1 h-1 rounded-full ${i === generatingStep ? "bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)]" : "bg-white/40"}`}
+                        />
+                      ))}
+                    </div>
                   </motion.div>
                 )}
 

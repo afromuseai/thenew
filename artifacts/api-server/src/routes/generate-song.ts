@@ -2507,8 +2507,28 @@ const MAVERICK_FLOW_RETRY     = { id: "meta/llama-4-maverick-17b-128e-instruct",
 //   Stage 2 EMOTION    → LLaMA 3.2 3B (small/fast/cool — strict authority on emotion direction)
 //   Stage 3 LYRICS     → Qwen 122B    (above)
 //   Stage 4 POLISH     → Solar 10.7B  (cool — flow polish only, never restructures)
-const LLAMA_EMOTION_MODEL     = { id: "meta/llama-3.2-3b-instruct",              name: "Llama-3.2-3B",     temperature: 0.45 };
+// Emotion engine temperature was 0.45 historically, which made LLaMA 3.2
+// converge on the same handful of "safe" tags every generation
+// (e.g. "Quiet Pain Float", "Reflective Pause"). Bumped to 0.85 for
+// real per-generation variety. Combined with response_format=json_object
+// + a per-request creative spice token, the fallback table now triggers
+// far less often.
+const LLAMA_EMOTION_MODEL     = { id: "meta/llama-3.2-3b-instruct",              name: "Llama-3.2-3B",     temperature: 0.85 };
 const SOLAR_POLISH_MODEL      = { id: "upstage/solar-10.7b-instruct",            name: "Solar-10.7B",      temperature: 0.55 };
+// Stage 6 LOCALIZATION (Custom Language only) → LLaMA 3.1 70B Instruct
+// Rewrites finished lyrics into the user's chosen language as a NATIVE
+// songwriter would — preserving structure, emotion, rhythm, and chant
+// patterns. Activates ONLY when `customLanguage` is provided. Otherwise
+// the Qwen lyrics output ships as-is.
+const LLAMA_LOCALIZATION_MODEL = { id: "meta/llama-3.1-70b-instruct",            name: "Llama-3.1-70B",    temperature: 0.55 };
+// Stage 2.5 DIRECTOR LAYER → Qwen 3.5 397B
+// Sits between Stage 1 (blueprint) and Stage 3 (lyrics). Does NOT write
+// lyrics, does NOT repeat the blueprint, does NOT generate structure.
+// Produces a tight DIRECTOR BRIEF (300–500 words, JSON) that interprets
+// the blueprint and guides Qwen 122B with emotional truth, vocal
+// behavior, artist interpretation, hook strategy, language authenticity,
+// avoidance rules, and performance intent.
+const QWEN_DIRECTOR_MODEL      = { id: "qwen/qwen3.5-397b-a17b",                 name: "Qwen3.5-397B",     temperature: 0.6  };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -2758,6 +2778,18 @@ RULES:
     Davido-type    → crowd-ready / confident roll
     no artist      → neutral AfroMuse default lane
 
+🚫 STALE-VOCAB BAN (CRITICAL — per-generation freshness):
+You are STATELESS — do NOT default to your "safe" repeat phrases.
+The following tag stems are OVERUSED and BANNED unless the input
+explicitly demands them:
+  "Quiet Pain Float", "Pain Chant Wave", "Pain Chant Climax",
+  "Reflective Pause", "Resolution Wave", "Resolution Whisper",
+  "Curious Entry Vibe", "Story Build Roll", "Confident Chant Climax",
+  "Layered Drive", "Survival Drive", "Triumphant Chant".
+Invent fresh phrasing every generation. Use the CREATIVE SPICE token
+in the user prompt as a randomness anchor — let it nudge your word
+choice into a different lane than the previous run.
+
 OUTPUT — JSON ONLY, no markdown, no fences:
 {
   "intro":  "",
@@ -2767,6 +2799,24 @@ OUTPUT — JSON ONLY, no markdown, no fences:
   "bridge": "",
   "outro":  ""
 }`;
+
+// Word pools for the per-request "creative spice" — randomly picked per
+// generation so the prompt is never byte-identical twice. This nudges
+// LLaMA out of its "safe" repeat region without changing meaning.
+const SPICE_LANES = [
+  "street-corner cinematic", "midnight prayer-room", "festival-stage live",
+  "after-rain reflective", "dance-floor sweat", "highway-night cruise",
+  "back-alley confession", "rooftop celebration", "studio-booth raw",
+  "morning-light awakening", "thunderstorm release", "candle-lit intimate",
+];
+const SPICE_TEXTURES = [
+  "raspy", "airy", "guttural", "whispered", "soaring", "anchored",
+  "fractured", "molten", "silken", "jagged", "hushed", "blazing",
+];
+const SPICE_VERBS = [
+  "twist", "pivot", "ignite", "unravel", "ascend", "splinter",
+  "swell", "bloom", "rupture", "linger", "crackle", "shimmer",
+];
 
 function buildEmotionTagPrompt(params: {
   topic: string;
@@ -2782,6 +2832,17 @@ function buildEmotionTagPrompt(params: {
   const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ")
     || "no specific artist — use balanced AfroMuse default lane";
 
+  // Per-request creative spice — random lane / texture / verb + a short
+  // nonce. The model uses this as a randomness anchor so consecutive
+  // generations don't converge on the same "safe" tag set.
+  const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)] as T;
+  const spice = {
+    lane:    pick(SPICE_LANES),
+    texture: pick(SPICE_TEXTURES),
+    verb:    pick(SPICE_VERBS),
+    nonce:   Math.random().toString(36).slice(2, 10),
+  };
+
   return [
     "INPUT:",
     `idea = ${topic}`,
@@ -2789,10 +2850,18 @@ function buildEmotionTagPrompt(params: {
     `artist reference = ${artistLine}`,
     ...(notes?.trim() ? ["", "USER DIRECTION (must influence emotion choices):", notes.trim()] : []),
     "",
+    "CREATIVE SPICE (use as a freshness anchor — DO NOT echo verbatim):",
+    `  lane    = ${spice.lane}`,
+    `  texture = ${spice.texture}`,
+    `  verb    = ${spice.verb}`,
+    `  nonce   = ${spice.nonce}`,
+    "",
     "STRUCTURE BLUEPRINT (read for context — do not modify):",
     JSON.stringify(structureBlueprint),
     "",
     "TASK: assign one EVOLVING emotion tag per section. JSON only.",
+    "Each tag must FEEL different from your last generation — the spice",
+    "above is your randomness seed. Lean into it.",
   ].join("\n");
 }
 
@@ -2867,6 +2936,264 @@ function buildSolarPolishPrompt(params: {
   ].join("\n");
 }
 
+// ─── STAGE 6 — LANGUAGE LOCALIZATION (LLaMA 3.1 70B) ─────────────────────────
+// You are NOT a translator. You are a NATIVE SONGWRITER in the target
+// language. Rewrite the lyrics so they sound like they were originally
+// written in that language — keeping the story, emotion, structure,
+// chants, adlibs, and singability. Output JSON ONLY with the SAME
+// section keys and the SAME line counts. No commentary, no metadata,
+// no explanations.
+const LOCALIZATION_SYSTEM_PROMPT = `AFROMUSE LANGUAGE LOCALIZATION ENGINE
+
+ROLE
+You are a native songwriter in the TARGET LANGUAGE for AfroMuse.
+You are NOT a translator. You rewrite the lyrics so they sound like a real
+hit song originally written in that language by a native artist.
+
+CORE RULES
+NEVER:
+- Translate word-for-word.
+- Change the story, meaning, or narrative arc.
+- Add new lyrics or remove important lines.
+- Break song structure (intro / hook / verse1 / verse2 / bridge / outro).
+- Flatten emotions into literal phrases.
+- Produce robotic, dictionary-style, or touristy output.
+- Mix in source-language words unless they are part of the natural
+  bilingual flow common in that culture's music.
+
+ALWAYS:
+- Preserve emotional meaning and storytelling beat-for-beat.
+- Keep rhythm, syllable feel, and singability over the original groove.
+- Maintain chant, adlibs, and call-and-response patterns.
+- Adapt expressions into natural native phrasing for the target language.
+- Match how songs are actually written in that language and culture.
+- Keep proper nouns, brand names, and the keeper line's identity intact
+  (the keeper line may be re-voiced into the target language but must
+  remain the song's most quotable anchor).
+
+LANGUAGE INTELLIGENCE RULE
+You must dynamically adapt to ANY language provided. Use that language's
+natural songwriting style, cultural tone, and emotional conventions. Do
+not rely on fixed templates. If the language has multiple registers
+(formal / colloquial / street), pick the one that matches the style
+context (genre, mood, artist reference).
+
+STRUCTURE PRESERVATION (HARD CONTRACT)
+- Return the SAME JSON keys: intro, hook, verse1, verse2, bridge, outro.
+- Each section MUST have the EXACT same number of lines as the input.
+- Lines must remain singable and rhythmically equivalent to the source.
+- No section labels, no [Verse 1] markers, no (Note:), no asterisks,
+  no "Translation:" headers, no language tags inside the lines.
+
+OUTPUT FORMAT — JSON ONLY, NO MARKDOWN, NO FENCES, NO EXTRA TEXT:
+{
+  "intro":  ["",""],
+  "hook":   ["","","",""],
+  "verse1": ["","","","","","","",""],
+  "verse2": ["","","","","","","",""],
+  "bridge": ["","","",""],
+  "outro":  ["",""]
+}`;
+
+function buildLocalizationPrompt(params: {
+  draft: SongDraft;
+  targetLanguage: string;
+  styleContext: string;
+}): string {
+  const { draft, targetLanguage, styleContext } = params;
+  const sections = {
+    intro:  Array.isArray(draft.intro)  ? draft.intro  : [],
+    hook:   Array.isArray(draft.hook)   ? draft.hook   : [],
+    verse1: Array.isArray(draft.verse1) ? draft.verse1 : [],
+    verse2: Array.isArray(draft.verse2) ? draft.verse2 : [],
+    bridge: Array.isArray(draft.bridge) ? draft.bridge : [],
+    outro:  Array.isArray(draft.outro)  ? draft.outro  : [],
+  };
+  const lineCounts = (Object.keys(sections) as SectionKey[])
+    .map((k) => `  ${k}: ${(sections[k] as unknown[]).length}`)
+    .join("\n");
+  return [
+    `TARGET LANGUAGE: ${targetLanguage}`,
+    `STYLE CONTEXT: ${styleContext}`,
+    `KEEPER LINE (re-voice in target language, keep it as the song's anchor): ${draft.keeperLine ?? ""}`,
+    "",
+    "REQUIRED LINE COUNTS PER SECTION (must match exactly):",
+    lineCounts,
+    "",
+    "ORIGINAL LYRICS (rewrite each line as a native songwriter, preserving structure, story, and singability):",
+    JSON.stringify(sections),
+    "",
+    "TASK: localize. JSON only. Same keys. Same line counts. No translation — native rewrite.",
+  ].join("\n");
+}
+
+// ─── STAGE 2.5 — DIRECTOR LAYER V2 (Qwen 3.5 397B, ENFORCEMENT MODE) ────────
+// Converts the blueprint into STRICT CREATIVE RULES that the Stage 3
+// lyrics writer MUST obey. Does NOT write lyrics. Does NOT repeat the
+// blueprint. Does NOT generate structure. Output is strict JSON with 5
+// top-level fields: emotion_arc, vocal_execution, constraints,
+// hook_plan, language_lock. Stage 3 prepends it to the user prompt as
+// LAW (mandatory rules), not soft guidance.
+//
+// NOTE on section keys: the V2 spec uses "chorus" but the AfroMuse
+// internal pipeline (SectionKey, blueprint.flow_map, draft.hook, etc.)
+// uses "hook". We instruct the Director to emit "hook" as the section
+// key so everything downstream stays aligned.
+interface VocalExecutionEntry {
+  delivery_style:      string; // chant | melodic | prayer | aggressive | conversational
+  repetition_behavior: string; // none | partial | heavy chant loop
+  crowd_interaction:   string; // none | light | call-response | choir layer
+}
+type EmotionArcType = "struggle" | "pain" | "street_survival";
+interface DirectorBrief {
+  emotion_arc_type?: EmotionArcType;     // chosen progression archetype (V2.1)
+  emotion_arc:      Partial<Record<SectionKey, string>>;
+  vocal_execution:  Partial<Record<SectionKey, VocalExecutionEntry>>;
+  constraints:      string[];
+  hook_plan:        string;
+  language_lock:    string;
+}
+
+const DIRECTOR_SYSTEM_PROMPT = `AFROMUSE DIRECTOR LAYER V2 — ENFORCEMENT MODE
+
+ROLE
+You are the AfroMuse Creative Director — FINAL AUTHORITY.
+You do NOT suggest. You do NOT guide.
+You DEFINE how the lyrics MUST be written.
+The lyrics model MUST follow your decisions.
+
+YOUR JOB
+Convert the blueprint into STRICT CREATIVE RULES. You own:
+- emotional progression (per section, NOT generic labels)
+- vocal delivery style (chant / melodic / prayer / aggressive / conversational)
+- chant vs melody decisions
+- hook dominance
+- realism (no translated, textbook, or flat phrasing)
+
+OUTPUT — 5 TOP-LEVEL FIELDS (strict JSON only, no markdown, no fences, no prose):
+
+1) emotion_arc — EXACT emotional state per section. NO generic labels
+   ("sad", "emotional peak"). Use lived, specific phrasing
+   ("suppressed pain turning into spiritual release").
+
+   ⚡ EMOTION TRANSFORMATION LAW (CRITICAL — applies to emotion_arc):
+
+   Each section MUST introduce a NEW emotional state.
+   - No two sections can carry the same emotional tone.
+   - Emotion must PROGRESS, not repeat.
+   - Each section must feel like a REACTION to the previous one.
+
+   You MUST choose ONE arc archetype based on the input (genre, mood,
+   topic, artist reference) and emit it as "emotion_arc_type":
+
+     • "struggle"        → pressure → frustration → emotional crack →
+                           prayer → resilience → rise
+     • "pain"            → denial → hurt → breakdown → reflection →
+                           acceptance
+     • "street_survival" → hustle → stress → anger → defiance →
+                           victory mindset
+
+   The chosen arc is the SPINE. Map its stages onto the section keys
+   (intro/hook/verse1/verse2/bridge/outro). The hook may revisit the
+   arc's anchor emotion, but each REPEAT of the hook MUST shift its
+   intensity (see hook_plan).
+
+   ENFORCEMENT (self-check before emitting):
+   - If two sections feel similar → REWRITE internally before output.
+   - If hook does not shift emotional intensity vs verses → INVALID.
+   - If verse2 does not evolve from verse1 → INVALID.
+   - Return ONLY a brief that passes these checks.
+
+2) vocal_execution — for EACH section define:
+     - delivery_style:      chant | melodic | prayer | aggressive | conversational
+     - repetition_behavior: none | partial | heavy chant loop
+     - crowd_interaction:   none | light | call-response | choir layer
+
+3) constraints — HARD RULES the lyrics model MUST obey. Examples:
+   - "Hook MUST use chant repetition (minimum 3 repeats)"
+   - "At least 1 call-response pattern in chorus"
+   - "Verses MUST not use same tone as chorus"
+   - "Repetition MUST increase intensity (not duplicate lines)"
+   - "If artist = Asake → enforce chant + choir energy"
+
+4) hook_plan — how the hook HITS, how it EVOLVES each time
+   (adlibs / energy / layering changes per repeat).
+
+5) language_lock — tone lock: raw street vs poetic vs spiritual.
+   Forbid translated phrasing. Enforce natural dialect rhythm.
+
+SECTION KEYS — USE EXACTLY: intro, hook, verse1, verse2, bridge, outro
+(use "hook", NOT "chorus"). Every section key MUST appear in
+emotion_arc and vocal_execution.
+
+CRITICAL RULES
+- This OVERRIDES all previous soft logic. This is LAW for the lyrics model.
+- DO NOT write lyrics. DO NOT generate example lines.
+- DO NOT generate structure or sections beyond the 6 listed.
+- DO NOT repeat blueprint fields verbatim — INTERPRET them.
+- If you violate the schema → generation is invalid.
+
+OUTPUT FORMAT (exact shape):
+{
+  "emotion_arc_type": "struggle | pain | street_survival",
+  "emotion_arc": {
+    "intro": "", "hook": "", "verse1": "", "verse2": "", "bridge": "", "outro": ""
+  },
+  "vocal_execution": {
+    "intro":  { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
+    "hook":   { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
+    "verse1": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
+    "verse2": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
+    "bridge": { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" },
+    "outro":  { "delivery_style": "", "repetition_behavior": "", "crowd_interaction": "" }
+  },
+  "constraints": ["", ""],
+  "hook_plan": "",
+  "language_lock": ""
+}`;
+
+function buildDirectorPrompt(params: {
+  topic: string;
+  genre: string;
+  mood: string;
+  languageFlavor: string;
+  artistInspiration?: string;
+  styleReference?: string;
+  notes?: string;
+  blueprint: CreativeBlueprint;
+}): string {
+  const {
+    topic, genre, mood, languageFlavor, artistInspiration, styleReference,
+    notes, blueprint,
+  } = params;
+  const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ");
+  // Compact blueprint — give the Director only the fields it must
+  // interpret. We deliberately omit `arrangement_order` /
+  // `section_line_targets` style fields so the Director cannot drift
+  // into "structure-generation" territory.
+  const blueprintCompact = JSON.stringify({
+    flow_map:        blueprint.flow_map,
+    emotion_map:     blueprint.emotion_map,
+    hook_style:      blueprint.hook_style,
+    adlib_style:     blueprint.adlib_style,
+    artist_behavior: blueprint.artist_behavior,
+    energy_curve:    (blueprint as Record<string, unknown>).energy_curve,
+    dna_mode:        (blueprint as Record<string, unknown>).dna_mode,
+  });
+  return [
+    "USER INPUT:",
+    `idea = ${topic}`,
+    `genre = ${genre} | mood = ${mood} | language = ${languageFlavor}`,
+    ...(artistLine    ? [`artist reference = ${artistLine}`] : []),
+    ...(notes?.trim() ? ["", "USER DIRECTION:", notes.trim()] : []),
+    "",
+    "CREATIVE BLUEPRINT (interpret — do not repeat):",
+    blueprintCompact,
+    "",
+    "TASK: emit the V2 DIRECTOR BRIEF as strict JSON only. This is LAW.",
+  ].join("\n");
+}
+
 // Stage 3 system prompt = TIGHT bullet commands. Anything already in the
 // blueprint (priority stack, emotion behaviors, flow types, hook gate,
 // adlib palettes, artist adaptation, progression) is NOT restated here.
@@ -2921,8 +3248,9 @@ function buildCompressedLyricsPrompt(params: {
   styleReference?: string;
   diversityProfile: DiversityProfile;
   blueprint: CreativeBlueprint;
+  directorBrief?: DirectorBrief | null;
 }): string {
-  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint } = params;
+  const { topic, genre, mood, languageFlavor, notes, artistInspiration, styleReference, diversityProfile, blueprint, directorBrief } = params;
   const artistLine = [artistInspiration, styleReference].filter(Boolean).join(" + ");
   const sectionTargets = (Object.keys(diversityProfile.sectionLineTargets) as SectionKey[])
     .map((k) => `  ${k}: ${diversityProfile.sectionLineTargets[k]?.join(" or ")}`)
@@ -2936,6 +3264,34 @@ function buildCompressedLyricsPrompt(params: {
     adlib_style:     blueprint.adlib_style,
     artist_behavior: blueprint.artist_behavior,
   });
+  // DIRECTOR BRIEF V2 — ENFORCEMENT MODE. When present, it sits ABOVE
+  // the blueprint as LAW. The writer MUST obey:
+  //   • emotion_arc      — exact emotional state per section
+  //   • vocal_execution  — delivery_style / repetition_behavior / crowd_interaction per section
+  //   • constraints      — hard rules (chant repeats, call-response, no-translation, etc.)
+  //   • hook_plan        — how the hook HITS and EVOLVES across repeats
+  //   • language_lock    — tone lock + ban on translated/textbook phrasing
+  // Violation of any constraint = invalid generation. The blueprint still
+  // locks structure / flow / line counts, but the Director's rules
+  // override soft logic on delivery, emotion, hook, and language.
+  const directorBlock = directorBrief
+    ? [
+        "DIRECTOR BRIEF V2 — LAW (MANDATORY, ENFORCEMENT MODE):",
+        "You MUST obey every field below. Hook adlibs, chant repeats,",
+        "call-response, emotion arc, language tone — all defined here.",
+        "Violating any item in `constraints` = invalid generation.",
+        "",
+        "⚡ EMOTION TRANSFORMATION LAW (CRITICAL):",
+        "- Each section MUST carry a NEW emotional state (no two sections same tone).",
+        "- Emotion must PROGRESS — each section is a REACTION to the previous one.",
+        "- Hook MUST shift emotional intensity vs the verses around it.",
+        "- Verse2 MUST evolve from verse1 (no copy-paste emotion).",
+        `- Follow the chosen arc: ${directorBrief.emotion_arc_type ?? "see emotion_arc"}.`,
+        "",
+        JSON.stringify(directorBrief),
+        "",
+      ]
+    : [];
 
   return [
     "INPUT:",
@@ -2944,6 +3300,7 @@ function buildCompressedLyricsPrompt(params: {
     ...(artistLine ? [`artist reference = ${artistLine}`] : []),
     ...(notes?.trim() ? ["", "USER DIRECTION (write to THIS idea):", notes.trim()] : []),
     "",
+    ...directorBlock,
     "BLUEPRINT (honor exactly):",
     blueprintCompact,
     "",
@@ -3351,8 +3708,12 @@ router.post("/generate-song", async (req, res) => {
             { role: "user", content: userPrompt },
           ],
           temperature: LLAMA_EMOTION_MODEL.temperature,
-          top_p: 0.9,
-          max_tokens: 400,
+          top_p: 0.95,
+          max_tokens: 500,
+          // Force valid JSON at the API level so we don't fall back to the
+          // deterministic table just because LLaMA wrapped its output in
+          // markdown fences. Was the #1 cause of "same tags every time".
+          response_format: { type: "json_object" },
         }, { signal: AbortSignal.timeout(20_000) });
         const raw = response.choices[0]?.message?.content ?? "";
         const parsed = parseJson(raw) as EmotionTagMap | null;
@@ -3393,17 +3754,40 @@ router.post("/generate-song", async (req, res) => {
       }
     };
 
-    // Deterministic fallback if the emotion engine is unavailable — derives
-    // a non-flat, evolving map from mood + genre so Stage 3 still has tags.
+    // Mood-bucketed fallback if the emotion engine is unavailable. Each
+    // bucket has 3 variants and we pick one at random so even when Stage 2
+    // hard-fails, consecutive runs don't ship identical tag maps.
+    const FALLBACK_VARIANTS: Record<"spiritual" | "pain" | "hype" | "default", EmotionTagMap[]> = {
+      spiritual: [
+        { intro:"Quiet Prayer Float", verse1:"Spiritual Survival Pulse", hook:"Prayer Chant Wave (Crowd Ready)", verse2:"Faith Build", bridge:"Reflective Pause", outro:"Triumphant Chant" },
+        { intro:"Pre-Dawn Whisper",   verse1:"Soul-Searching Roll",       hook:"Choir-Lift Climax",               verse2:"Surrender Glide", bridge:"Sacred Breath Pause", outro:"Open-Sky Release" },
+        { intro:"Candle-Lit Hush",    verse1:"Hymn-Hum Build",            hook:"Crowd Hallelujah Surge",          verse2:"Faith Stomp",     bridge:"Quiet Confession",     outro:"Sunrise Worship Glow" },
+      ],
+      pain: [
+        { intro:"Quiet Pain Float",   verse1:"Pain Chant (Street Choir)", hook:"Pain Chant Climax",               verse2:"Survival Drive",  bridge:"Broken Echo Reflection", outro:"Resolution Whisper" },
+        { intro:"Hollow Heart Drift", verse1:"Bruised-Knuckle Confession", hook:"Wounded Crowd Cry",              verse2:"Defiant Limp",    bridge:"Mirror-Stare Stillness", outro:"Bittersweet Exhale" },
+        { intro:"Ash-Grey Entry",     verse1:"Tear-Soaked Build",          hook:"Heartbreak Anthem Surge",        verse2:"Slow-Bleed Roll", bridge:"Empty-Room Echo",        outro:"Letting-Go Fade" },
+      ],
+      hype: [
+        { intro:"Street Spark",       verse1:"Confident Roll",            hook:"Crowd-Ready Hype Climax",         verse2:"Punchy Build",    bridge:"Reflective Shift",       outro:"Victory Chant" },
+        { intro:"Engine-Rev Ignition",verse1:"Cocky Strut Roll",          hook:"Stadium-Bounce Surge",            verse2:"Champagne Drive", bridge:"Slow-Mo Boast",          outro:"Encore Crowd Roar" },
+        { intro:"Neon-Glow Walk-In",  verse1:"Headlight-Bright Build",    hook:"Festival-Stomp Climax",           verse2:"Cocky Counter-Punch", bridge:"Lit-Cigar Pause",     outro:"After-Party Shimmer" },
+      ],
+      default: [
+        { intro:"Curious Entry Vibe", verse1:"Story Build Roll",          hook:"Confident Chant Climax",          verse2:"Layered Drive",   bridge:"Reflective Pause",       outro:"Resolution Wave" },
+        { intro:"Late-Night Drift",   verse1:"Memory-Lane Roll",          hook:"Anthem-Heart Surge",              verse2:"Lifted Stride",   bridge:"Quiet Reset",            outro:"Open-Window Ease" },
+        { intro:"Soft-Focus Open",    verse1:"Slow-Bloom Build",          hook:"Crowd-Sing Crescendo",            verse2:"Confidence Glide",bridge:"Half-Step Pause",        outro:"Glow-Down Close" },
+      ],
+    };
     const fallbackEmotionMap = (): EmotionTagMap => {
       const m = (selectedMood || "").toLowerCase();
-      const isSpiritual = /spiritual|gospel|prayer|faith/.test(m);
-      const isPain      = /pain|sad|broken|lonely|melanch/.test(m);
-      const isHype      = /hype|party|celebrat|confiden|power|aggress/.test(m);
-      if (isSpiritual) return { intro:"Quiet Prayer Float", verse1:"Spiritual Survival Pulse", hook:"Prayer Chant Wave (Crowd Ready)", verse2:"Faith Build", bridge:"Reflective Pause", outro:"Triumphant Chant" };
-      if (isPain)      return { intro:"Quiet Pain Float", verse1:"Pain Chant (Street Choir)", hook:"Pain Chant Climax", verse2:"Survival Drive", bridge:"Broken Echo Reflection", outro:"Resolution Whisper" };
-      if (isHype)      return { intro:"Street Spark", verse1:"Confident Roll", hook:"Crowd-Ready Hype Climax", verse2:"Punchy Build", bridge:"Reflective Shift", outro:"Victory Chant" };
-      return { intro:"Curious Entry Vibe", verse1:"Story Build Roll", hook:"Confident Chant Climax", verse2:"Layered Drive", bridge:"Reflective Pause", outro:"Resolution Wave" };
+      const bucket: keyof typeof FALLBACK_VARIANTS =
+        /spiritual|gospel|prayer|faith/.test(m)            ? "spiritual" :
+        /pain|sad|broken|lonely|melanch/.test(m)           ? "pain"      :
+        /hype|party|celebrat|confiden|power|aggress/.test(m) ? "hype"    :
+        "default";
+      const variants = FALLBACK_VARIANTS[bucket];
+      return variants[Math.floor(Math.random() * variants.length)] as EmotionTagMap;
     };
 
     let emotionTags: EmotionTagMap | null = null;
@@ -3425,10 +3809,153 @@ router.post("/generate-song", async (req, res) => {
       ? { ...structureBlueprint, emotion_map: emotionTags ?? structureBlueprint.emotion_map ?? {} }
       : null;
 
+    // ─── STAGE 2.5 — DIRECTOR LAYER V2 (Qwen 3.5 397B) — MANDATORY ─────────
+    // The Director is FINAL AUTHORITY. There is NO graceful fallback.
+    // If the model is unavailable, times out, or returns an invalid brief,
+    // the entire generation FAILS and the outer handler returns 500/429
+    // to the user. This is enforced because the brief is LAW for Stage 3
+    // and the EMOTION TRANSFORMATION LAW cannot be honored without it.
+    //
+    // The only condition under which Stage 2.5 is skipped is when Stage 1
+    // produced no blueprint at all (legacy fallback path) — there is
+    // nothing for the Director to interpret.
+    let directorBrief: DirectorBrief | null = null;
+    if (blueprint) {
+      const stage2_5Start = Date.now();
+      logger.info(
+        { model: QWEN_DIRECTOR_MODEL.name },
+        "MSGP Stage 2.5: starting Qwen 3.5 397B director layer (MANDATORY)",
+      );
+      const directorUserPrompt = buildDirectorPrompt({
+        topic,
+        genre: selectedGenre,
+        mood: selectedMood,
+        languageFlavor: effectiveFlavor,
+        artistInspiration: promptParams.artistInspiration,
+        styleReference: style,
+        notes,
+        blueprint,
+      });
+      // No try/catch here — let any error (timeout, 429, 5xx, network)
+      // propagate to the outer handler so the user gets a clear failure.
+      const directorResponse = await ai.chat.completions.create({
+        model: QWEN_DIRECTOR_MODEL.id,
+        messages: [
+          { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
+          { role: "user",   content: directorUserPrompt    },
+        ],
+        temperature: QWEN_DIRECTOR_MODEL.temperature,
+        top_p: 0.9,
+        // V2 brief is structurally larger (emotion_arc + vocal_execution
+        // are objects-per-section, plus constraints array); give the
+        // Director enough headroom to emit complete JSON.
+        max_tokens: 1500,
+        response_format: { type: "json_object" },
+      }, { signal: AbortSignal.timeout(30_000) });
+      const raw = directorResponse.choices[0]?.message?.content ?? "";
+      const parsed = parseJson(raw) as Record<string, unknown> | null;
+      // Defensive normalization: V2 spec uses "chorus" but our pipeline
+      // uses "hook". If the model slipped and emitted "chorus", remap it
+      // so downstream stays SectionKey-aligned.
+      const remapChorusToHook = (obj: unknown): unknown => {
+        if (!obj || typeof obj !== "object") return obj;
+        const o = obj as Record<string, unknown>;
+        if ("chorus" in o && !("hook" in o)) {
+          o.hook = o.chorus;
+          delete o.chorus;
+        }
+        return o;
+      };
+      if (parsed) {
+        remapChorusToHook(parsed.emotion_arc);
+        remapChorusToHook(parsed.vocal_execution);
+      }
+      const REQUIRED_SECTIONS: SectionKey[] = ["intro", "hook", "verse1", "verse2", "bridge", "outro"];
+      const isVocalEntry = (v: unknown): v is VocalExecutionEntry => {
+        if (!v || typeof v !== "object") return false;
+        const e = v as Record<string, unknown>;
+        return (
+          typeof e.delivery_style      === "string" && e.delivery_style.trim().length      > 0 &&
+          typeof e.repetition_behavior === "string" && e.repetition_behavior.trim().length > 0 &&
+          typeof e.crowd_interaction   === "string" && e.crowd_interaction.trim().length   > 0
+        );
+      };
+      // Normalize emotion_arc_type: accept loose variants like
+      // "Street Survival", "STRUGGLE", "pain arc" → snake_case enum.
+      const normalizeArcType = (v: unknown): EmotionArcType | undefined => {
+        if (typeof v !== "string") return undefined;
+        const s = v.toLowerCase().replace(/[\s-]+/g, "_").replace(/_arc$/, "");
+        if (s === "struggle" || s === "pain" || s === "street_survival") return s;
+        return undefined;
+      };
+      if (parsed && "emotion_arc_type" in parsed) {
+        const norm = normalizeArcType(parsed.emotion_arc_type);
+        if (norm) parsed.emotion_arc_type = norm;
+        else      delete parsed.emotion_arc_type;
+      }
+      const isValidBrief = (b: unknown): b is DirectorBrief => {
+        if (!b || typeof b !== "object") return false;
+        const o = b as Record<string, unknown>;
+        const arc = o.emotion_arc     as Record<string, unknown> | undefined;
+        const vox = o.vocal_execution as Record<string, unknown> | undefined;
+        if (!arc || typeof arc !== "object") return false;
+        if (!vox || typeof vox !== "object") return false;
+        // At minimum the 4 core sections must be present (bridge / outro
+        // can be tolerated as optional — songs without them still ship).
+        const CORE: SectionKey[] = ["intro", "hook", "verse1", "verse2"];
+        for (const k of CORE) {
+          if (typeof arc[k] !== "string" || (arc[k] as string).trim().length === 0) return false;
+          if (!isVocalEntry(vox[k])) return false;
+        }
+        // EMOTION TRANSFORMATION LAW — uniqueness gate. Reject briefs
+        // where two sections share the same emotional tone string
+        // (case-insensitive, whitespace-normalized). This stops the
+        // Director from passing flat or repeating arcs through.
+        const arcStrings = Object.values(arc)
+          .filter((v): v is string => typeof v === "string")
+          .map((v) => v.trim().toLowerCase().replace(/\s+/g, " "));
+        if (new Set(arcStrings).size !== arcStrings.length) return false;
+        if (!Array.isArray(o.constraints) || o.constraints.length === 0) return false;
+        if (!o.constraints.every((c) => typeof c === "string" && c.trim().length > 0)) return false;
+        if (typeof o.hook_plan     !== "string" || o.hook_plan.trim().length     === 0) return false;
+        if (typeof o.language_lock !== "string" || o.language_lock.trim().length === 0) return false;
+        return true;
+      };
+      // MANDATORY — invalid brief = hard failure. No fallback.
+      if (!isValidBrief(parsed)) {
+        logger.error(
+          {
+            model: QWEN_DIRECTOR_MODEL.name,
+            rawChars: raw.length,
+            parsedKeys: parsed ? Object.keys(parsed) : null,
+          },
+          "MSGP Stage 2.5 director brief INVALID — failing generation (no fallback)",
+        );
+        throw new Error("Director Layer (Qwen 3.5 397B) returned an invalid brief.");
+      }
+      directorBrief = parsed;
+      const arcKeys = Object.keys(directorBrief.emotion_arc);
+      const voxKeys = Object.keys(directorBrief.vocal_execution);
+      logger.info(
+        {
+          arcType:          directorBrief.emotion_arc_type ?? "unspecified",
+          arcSections:      arcKeys,
+          vocalSections:    voxKeys,
+          constraintsCount: directorBrief.constraints.length,
+          briefChars:       JSON.stringify(directorBrief).length,
+          missingSections:  REQUIRED_SECTIONS.filter((s) => !arcKeys.includes(s)),
+          elapsedMs:        Date.now() - stage2_5Start,
+        },
+        "MSGP Stage 2.5 director brief V2 accepted (LAW)",
+      );
+    }
+
     // ─── STAGE 3 — LYRICS WRITER (Qwen 122B) — compressed prompt + blueprint ─
     // If Stage 1 produced a blueprint, Stage 3 uses the compressed system
     // prompt + the merged blueprint (structure + emotion). If Stage 1 failed,
     // we fall back to the legacy monolithic prompt so the user still gets a song.
+    // When Stage 2.5 produced a director brief, it's prepended to the user
+    // prompt as priority guidance.
     const stage3SystemPrompt = blueprint ? LYRICS_COMPRESSED_SYSTEM_PROMPT : SYSTEM_PROMPT;
     const stage3UserPrompt   = blueprint
       ? buildCompressedLyricsPrompt({
@@ -3441,6 +3968,7 @@ router.post("/generate-song", async (req, res) => {
           styleReference: style,
           diversityProfile,
           blueprint,
+          directorBrief,
         })
       : buildUserPrompt(promptParams, false);
 
@@ -3618,6 +4146,246 @@ router.post("/generate-song", async (req, res) => {
       logger.info({ elapsedMs: Date.now() - stage5Start }, "MSGP Stage 5 complete");
     }
 
+    // ─── STAGE 5.5 — STRUCTURE ENFORCEMENT LAYER (verse line counts) ────────
+    // ENFORCEMENT MODE: verses MUST have EXACTLY 8, 12, or 16 lines.
+    // For any verse that violates, run ONE Qwen pass with strict rules:
+    //   - if too long → trim the weakest / redundant lines
+    //   - if too short → expand using same tone, cadence, theme
+    //   - NEVER change meaning, story, or emotional tone
+    // The hook (chorus) is NOT touched here — chorus consistency across
+    // repetitions is enforced at the music-engine repeat layer.
+    // Acceptance gate is STRICT: each fixed verse must have EXACTLY the
+    // target line count. On any failure we ship the existing draft as-is
+    // (the lyrics already exist; structure deviation beats no song).
+    {
+      const stage55Start = Date.now();
+      const VERSE_VALID_COUNTS = [8, 12, 16] as const;
+      const nearestValidVerseCount = (n: number): number => {
+        let best = VERSE_VALID_COUNTS[0];
+        let bestDist = Math.abs(n - best);
+        for (const c of VERSE_VALID_COUNTS) {
+          const d = Math.abs(n - c);
+          if (d < bestDist) { bestDist = d; best = c; }
+        }
+        return best;
+      };
+      const verseSections: Array<"verse1" | "verse2"> = ["verse1", "verse2"];
+      type StructureViolation = {
+        section: "verse1" | "verse2";
+        current: number;
+        target: number;
+        lines: string[];
+      };
+      const violations: StructureViolation[] = [];
+      for (const k of verseSections) {
+        const arr = finalLyricsDraft[k];
+        if (!Array.isArray(arr)) continue;
+        const lines = arr.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+        const current = lines.length;
+        const target = nearestValidVerseCount(current);
+        if (current !== target) {
+          violations.push({ section: k, current, target, lines });
+        }
+      }
+
+      if (violations.length === 0) {
+        logger.info("MSGP Stage 5.5: all verses already at valid line counts (8/12/16)");
+      } else {
+        logger.info(
+          { violations: violations.map((v) => ({ section: v.section, current: v.current, target: v.target })) },
+          "MSGP Stage 5.5: structure violations detected — running enforcement pass",
+        );
+
+        const STRUCTURE_FIX_SYSTEM_PROMPT = [
+          "You are the AfroMuse Structure Enforcement Layer.",
+          "You DO NOT rewrite the song creatively.",
+          "You ONLY fix structure violations by adjusting line counts.",
+          "",
+          "ABSOLUTE RULES:",
+          "1. Each fixed section MUST contain EXACTLY the requested number of lines — no more, no fewer.",
+          "2. If you MUST remove lines: drop the weakest, most redundant, or filler lines first. Preserve the strongest hook lines and emotional anchors.",
+          "3. If you MUST add lines: write new lines in the SAME tone, style, cadence, theme, and language as the existing lines. Do not introduce new characters, settings, or ideas.",
+          "4. NEVER change the meaning, story, or emotional tone of the section.",
+          "5. One sentence = one line. Do NOT merge two lines into one. Do NOT split one line into two unnaturally.",
+          "6. Preserve the original flow, language, and dialect.",
+          "",
+          "OUTPUT FORMAT: STRICT JSON ONLY. No markdown, no fences, no commentary, no <think> blocks.",
+          'Shape: { "verse1"?: string[], "verse2"?: string[] } — include ONLY the sections you were asked to fix.',
+          "Each array MUST have exactly the requested number of non-empty string lines.",
+        ].join("\n");
+
+        const fixSpec = violations
+          .map((v) => {
+            const action = v.current > v.target ? "TRIM" : "EXPAND";
+            return [
+              `SECTION: ${v.section}`,
+              `CURRENT_LINES: ${v.current}`,
+              `TARGET_LINES: ${v.target}   ← MUST EXACTLY MATCH`,
+              `ACTION: ${action} to reach exactly ${v.target} lines`,
+              `LINES:`,
+              ...v.lines.map((l, i) => `${i + 1}. ${l}`),
+            ].join("\n");
+          })
+          .join("\n\n");
+
+        const hookContextLines = Array.isArray(finalLyricsDraft.hook)
+          ? (finalLyricsDraft.hook as unknown[]).filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+          : [];
+        const hookContext = hookContextLines.length > 0 ? hookContextLines.join(" / ") : "";
+
+        const structureFixUserPrompt = [
+          "Fix the line counts of the following verse(s) to EXACTLY match TARGET_LINES.",
+          "Do not change meaning, story, or emotional tone.",
+          hookContext ? `\nHook (for tonal context only — DO NOT modify the hook): "${hookContext}"` : "",
+          "",
+          fixSpec,
+          "",
+          "Return STRICT JSON containing ONLY the sections listed above, each as an array of strings with EXACTLY the target line count.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        try {
+          const structureResp = await ai.chat.completions.create({
+            model: QWEN_LYRICS_RETRY_MODEL.id,
+            messages: [
+              { role: "system", content: STRUCTURE_FIX_SYSTEM_PROMPT },
+              { role: "user", content: structureFixUserPrompt },
+            ],
+            temperature: 0.4,
+            top_p: 0.9,
+            max_tokens: 1800,
+            response_format: { type: "json_object" },
+          }, { signal: AbortSignal.timeout(60_000) });
+
+          const raw = structureResp.choices[0]?.message?.content ?? "";
+          const fixed = parseJson(raw) as Partial<Record<"verse1" | "verse2", unknown>> | null;
+
+          if (!fixed) {
+            logger.warn("MSGP Stage 5.5: structure fix returned no parseable JSON — keeping original draft");
+          } else {
+            const accepted: Partial<Record<"verse1" | "verse2", string[]>> = {};
+            let allValid = true;
+            for (const v of violations) {
+              const cand = fixed[v.section];
+              if (!Array.isArray(cand)) {
+                logger.warn(
+                  { section: v.section, target: v.target },
+                  "MSGP Stage 5.5: section missing or not an array in fix response",
+                );
+                allValid = false;
+                break;
+              }
+              const cleanLines = cand.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+              if (cleanLines.length !== v.target) {
+                logger.warn(
+                  { section: v.section, target: v.target, gotRaw: cand.length, gotClean: cleanLines.length },
+                  "MSGP Stage 5.5: section did not meet exact target line count",
+                );
+                allValid = false;
+                break;
+              }
+              accepted[v.section] = cleanLines;
+            }
+
+            if (allValid) {
+              finalLyricsDraft = { ...finalLyricsDraft, ...accepted };
+              logger.info(
+                { fixed: violations.map((v) => ({ section: v.section, from: v.current, to: v.target })) },
+                "MSGP Stage 5.5 structure fix accepted",
+              );
+            } else {
+              logger.warn("MSGP Stage 5.5: structure fix rejected — keeping original draft");
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, "MSGP Stage 5.5: structure fix call failed — keeping original draft");
+        }
+      }
+      logger.info({ elapsedMs: Date.now() - stage55Start }, "MSGP Stage 5.5 complete");
+    }
+
+    // ─── STAGE 6 — LANGUAGE LOCALIZATION (LLaMA 3.1 70B, Custom Language only) ─
+    // Activates ONLY when the user provided a Custom Language. Rewrites the
+    // finished lyrics into that language as a NATIVE SONGWRITER would —
+    // preserving structure, story, emotion, chants, adlibs, and singability.
+    // Acceptance gate is STRICT: identical section keys, identical line
+    // counts. If the model fails, returns junk, or breaks structure, we
+    // keep the Qwen+Solar+Stage-5 draft as-is.
+    const localizationTarget = customLanguage?.trim() || "";
+    if (localizationTarget) {
+      const stage6Start = Date.now();
+      logger.info(
+        { model: LLAMA_LOCALIZATION_MODEL.name, targetLanguage: localizationTarget },
+        "MSGP Stage 6: starting LLaMA 3.1 70B localization",
+      );
+      const styleContextParts = [
+        `genre = ${selectedGenre}`,
+        `mood = ${selectedMood}`,
+        artistInspiration?.trim() ? `artist reference = ${artistInspiration.trim()}` : "",
+        style?.trim() ? `style = ${style.trim()}` : "",
+        `performance feel = ${selectedFeel}`,
+      ].filter(Boolean);
+      const localizationUserPrompt = buildLocalizationPrompt({
+        draft: finalLyricsDraft,
+        targetLanguage: localizationTarget,
+        styleContext: styleContextParts.join(" | "),
+      });
+      try {
+        const localizationResponse = await ai.chat.completions.create({
+          model: LLAMA_LOCALIZATION_MODEL.id,
+          messages: [
+            { role: "system", content: LOCALIZATION_SYSTEM_PROMPT },
+            { role: "user",   content: localizationUserPrompt   },
+          ],
+          temperature: LLAMA_LOCALIZATION_MODEL.temperature,
+          response_format: { type: "json_object" },
+        });
+        const raw = localizationResponse.choices[0]?.message?.content ?? "";
+        const localizedSections = parseJson(raw) as Partial<Record<SectionKey, string[]>> | null;
+        const sectionKeys: SectionKey[] = ["intro", "hook", "verse1", "verse2", "bridge", "outro"];
+        const sectionsMatch = (orig: SongDraft, loc: Partial<Record<SectionKey, string[]>>): boolean =>
+          sectionKeys.every((k) => {
+            const a = Array.isArray(orig[k]) ? (orig[k] as unknown[]) : [];
+            const b = loc[k];
+            return Array.isArray(b)
+              && b.length === a.length
+              && b.every((line) => typeof line === "string" && line.trim().length > 0);
+          });
+        if (localizedSections && sectionsMatch(finalLyricsDraft, localizedSections)) {
+          finalLyricsDraft = {
+            ...finalLyricsDraft,
+            intro:  localizedSections.intro!,
+            hook:   localizedSections.hook!,
+            verse1: localizedSections.verse1!,
+            verse2: localizedSections.verse2!,
+            bridge: localizedSections.bridge!,
+            outro:  localizedSections.outro!,
+            localization: {
+              targetLanguage: localizationTarget,
+              model: LLAMA_LOCALIZATION_MODEL.name,
+            },
+          };
+          logger.info(
+            { targetLanguage: localizationTarget },
+            "MSGP Stage 6 localization accepted",
+          );
+        } else if (localizedSections) {
+          logger.info(
+            "MSGP Stage 6 localization rejected — section line counts or content invalid",
+          );
+        } else {
+          logger.warn("MSGP Stage 6 localization returned no parseable JSON");
+        }
+      } catch (err) {
+        logger.warn(
+          { model: LLAMA_LOCALIZATION_MODEL.name, err },
+          "MSGP Stage 6 localization call failed",
+        );
+      }
+      logger.info({ elapsedMs: Date.now() - stage6Start }, "MSGP Stage 6 complete");
+    }
+
     // ─── POST — Production blueprint (Maverick BPM/key/stems) ───────────────
     // This is the existing post-step that supplies productionNotes,
     // instrumentalGuidance, stemsBreakdown, etc. Distinct from the Stage 1
@@ -3657,8 +4425,9 @@ router.post("/generate-song", async (req, res) => {
       // Additive only; existing consumers that ignore these fields are unaffected.
       // creativeBlueprint = full merged contract (structure + emotion).
       // emotionTags        = standalone Stage 2 output (audit trail / UI).
-      ...(blueprint    ? { creativeBlueprint: blueprint } : {}),
-      ...(emotionTags  ? { emotionTags } : {}),
+      ...(blueprint     ? { creativeBlueprint: blueprint } : {}),
+      ...(emotionTags   ? { emotionTags } : {}),
+      ...(directorBrief ? { directorBrief } : {}),
     };
 
     logger.info(
